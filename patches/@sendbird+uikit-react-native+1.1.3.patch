@@ -1,0 +1,4448 @@
+diff --git a/node_modules/@sendbird/uikit-react-native/lib/.DS_Store b/node_modules/@sendbird/uikit-react-native/lib/.DS_Store
+new file mode 100644
+index 0000000..e69de29
+diff --git a/node_modules/@sendbird/uikit-react-native/lib/commonjs/.DS_Store b/node_modules/@sendbird/uikit-react-native/lib/commonjs/.DS_Store
+new file mode 100644
+index 0000000..e69de29
+diff --git a/node_modules/@sendbird/uikit-react-native/src/.DS_Store b/node_modules/@sendbird/uikit-react-native/src/.DS_Store
+new file mode 100644
+index 0000000..e69de29
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/ChannelCover.tsx b/node_modules/@sendbird/uikit-react-native/src/components/ChannelCover.tsx
+index 600dabc..94b6e81 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/ChannelCover.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/ChannelCover.tsx
+@@ -4,16 +4,68 @@ import type { StyleProp, ViewStyle } from 'react-native';
+ import { Avatar } from '@sendbird/uikit-react-native-foundation';
+ import { SendbirdGroupChannel, getMembersExcludeMe, isDefaultCoverImage } from '@sendbird/uikit-utils';
+ 
++import { widthPercentageToDP as wp } from 'react-native-responsive-screen';
+ import { useSendbirdChat } from '../hooks/useContext';
++import { Pressable, View } from "react-native";
++import { CONST_TYPES } from "../../../../../app/uikit-app";
+ 
+ type Props = {
+   channel: SendbirdGroupChannel;
++  isPreview: boolean;
+   size?: number;
+   containerStyle?: StyleProp<ViewStyle>;
+ };
+ 
+-const ChannelCover = ({ channel, ...avatarProps }: Props) => {
+-  const { currentUser } = useSendbirdChat();
++let onlineInterval = null;
++
++const ChannelCover = ({ channel, isPreview = false, ...avatarProps }: Props) => {
++  const { currentUser, sdk } = useSendbirdChat();
++  const [isOnline, setOnline] = React.useState(false);
++
++  const updateOnlineStatus = () => {
++    try {
++      channel.refresh((groupChannel, e) => {
++        if (e?.code === 500910 && onlineInterval !== null) {
++          clearInterval(onlineInterval);
++          onlineInterval = null;
++          onlineInterval = setInterval(() => updateOnlineStatus(), 5000);
++        } else {
++          setOnline(() =>
++            groupChannel?.members?.filter(
++              (m) => m.userId !== currentUser.userId
++            )[0].connectionStatus === 'online'
++          );
++        }
++      })
++    } catch (e) {
++      console.log('Error updating online statue => ', e.message);
++    }
++  };
++
++  React.useEffect( () => {
++    if (onlineInterval !== null) {
++      clearInterval(onlineInterval);
++      onlineInterval = null;
++    }
++
++    if (!channel.isDistinct && !channel.isSuper) {
++      // Group
++    } else if (channel.isPublic) {
++      // Channel
++    } else {
++      // Direct
++      if (channel.memberCount === 2) {
++        updateOnlineStatus();
++        onlineInterval = setInterval(() => updateOnlineStatus(), 5000);
++      }
++    }
++    return () => {
++      if (onlineInterval !== null) {
++        clearInterval(onlineInterval);
++        onlineInterval = null;
++      }
++    }
++  }, []);
+ 
+   // channel cover
+   if (!isDefaultCoverImage(channel.coverUrl) || !currentUser) {
+@@ -27,15 +79,40 @@ const ChannelCover = ({ channel, ...avatarProps }: Props) => {
+ 
+   // 1:1, use member profile
+   if (channel.memberCount === 2) {
+-    const otherUserProfile = channel.members.filter((m) => m.userId !== currentUser.userId)?.[0]?.profileUrl;
+-    return <Avatar uri={otherUserProfile} {...avatarProps} />;
++    const otherUserProfile = channel.members.filter(
++      (m) => m.userId !== currentUser.userId
++    )[0];
++    return (
++      // <Pressable disbaled={avatarProps?.onProfilePressed === null} onPress={() => avatarProps?.onProfilePressed()}>
++      <>
++        <Avatar
++          {...avatarProps}
++          uri={otherUserProfile?.profileUrl}
++        />
++        {isPreview && (
++          <View
++            style={{
++              right: 0,
++              bottom: 0,
++              width: 20,
++              height: 20,
++              borderWidth: 5,
++              borderRadius: 90,
++              position: 'absolute',
++              borderColor: 'white',
++              backgroundColor: isOnline ? '#27976f' : '#626262',
++            }}
++          />
++        )}
++      </>
++    );
+   }
+ 
+   // group, use members profile
+   return (
+     <Avatar.Group {...avatarProps}>
+       {getMembersExcludeMe(channel, currentUser?.userId).map((m) => (
+-        <Avatar key={m.userId} uri={m.profileUrl} />
++        <Avatar key={m.userId} uri={m.profileUrl} containerStyle={{ width: wp(100), height: wp(60) }} />
+       ))}
+     </Avatar.Group>
+   );
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/ChatFlatList.tsx b/node_modules/@sendbird/uikit-react-native/src/components/ChatFlatList.tsx
+index 14731a8..3090936 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/ChatFlatList.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/ChatFlatList.tsx
+@@ -12,7 +12,7 @@ function hasReachedToBottom(yPos: number, thresholdPx = 0) {
+   return thresholdPx >= yPos;
+ }
+ 
+-export type ChatFlatListRef = { scrollToBottom: (animated?: boolean) => void };
++export type ChatFlatListRef = { scrollToBottom: (animated?: boolean) => void ,scrollToIndex:(index:number,animated?: boolean)=>void};
+ type Props = Omit<FlatListProps<SendbirdMessage>, 'onEndReached'> & {
+   currentUserId?: string;
+   onBottomReached: () => void;
+@@ -33,6 +33,7 @@ const ChatFlatList = forwardRef<ChatFlatListRef, Props>(function CustomFlatList(
+     ref,
+     () => ({
+       scrollToBottom: (animated = true) => scrollRef.current?.scrollToOffset({ animated, offset: 0 }),
++      scrollToIndex: (index, animated = true) => scrollRef.current?.scrollToIndex({ animated, index:index ,viewPosition:0.5}),
+     }),
+     [],
+   );
+@@ -89,7 +90,7 @@ const ChatFlatList = forwardRef<ChatFlatListRef, Props>(function CustomFlatList(
+       onEndReached={onTopReached}
+       scrollEventThrottle={16}
+       onScroll={_onScroll}
+-    />
++   />
+   );
+ });
+ 
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/FileViewer.tsx b/node_modules/@sendbird/uikit-react-native/src/components/FileViewer.tsx
+index 5441456..8c0e9ac 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/FileViewer.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/FileViewer.tsx
+@@ -13,6 +13,7 @@ import {
+   useToast,
+   useUIKitTheme,
+ } from '@sendbird/uikit-react-native-foundation';
++import Loading from '../../../../../src/components/Loading';
+ import type { SendbirdFileMessage } from '@sendbird/uikit-utils';
+ import {
+   Logger,
+@@ -57,6 +58,7 @@ const FileViewer = ({
+   const { fileService, mediaService } = usePlatformService();
+   const toast = useToast();
+   const { alert } = useAlert();
++  const [isDownloading, setDownloading] = useState(false);
+ 
+   const basicTopInset = statusBarTranslucent ? topInset : 0;
+   const canDelete = isMyMessage(fileMessage, currentUser?.userId);
+@@ -90,6 +92,7 @@ const FileViewer = ({
+             style={[StyleSheet.absoluteFill, { top: basicTopInset + defaultHeight, bottom: defaultHeight + bottom }]}
+             resizeMode={'contain'}
+             onLoad={() => setLoading(false)}
++            ignoreSilentSwitch={"ignore"}
+           />
+         );
+       }
+@@ -138,13 +141,19 @@ const FileViewer = ({
+         toast.show(STRINGS.TOAST.DOWNLOAD_START, 'success');
+       }
+ 
++      const fileName = fileMessage.url.toLowerCase().includes('mp4') ? new Date().getTime() + '.mp4' : fileMessage.name;
++      const params = { fileUrl: fileMessage.url, fileName: fileName, fileType: fileMessage.type };
++
++      setDownloading(() => true);
+       fileService
+-        .save({ fileUrl: fileMessage.url, fileName: fileMessage.name, fileType: fileMessage.type })
++        .save(params)
+         .then((response) => {
++          setDownloading(() => false);
+           toast.show(STRINGS.TOAST.DOWNLOAD_OK, 'success');
+           Logger.log('File saved to', response);
+         })
+         .catch((err) => {
++          setDownloading(() => false);
+           toast.show(STRINGS.TOAST.DOWNLOAD_ERROR, 'error');
+           Logger.log('File save failure', err);
+         });
+@@ -172,6 +181,7 @@ const FileViewer = ({
+         onPressDelete={_onPressDelete}
+         onPressDownload={_onPressDownload}
+       />
++      <Loading visible={isDownloading} />
+     </View>
+   );
+ };
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/AdminMessage/index.tsx b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/AdminMessage/index.tsx
+index d12914c..9191e45 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/AdminMessage/index.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/AdminMessage/index.tsx
+@@ -1,20 +1,41 @@
+-import React from 'react';
++import React, {useState} from 'react';
+ import { StyleSheet, View } from 'react-native';
+ 
+ import { Text, createStyleSheet, useUIKitTheme } from '@sendbird/uikit-react-native-foundation';
+ import type { SendbirdAdminMessage } from '@sendbird/uikit-utils';
+ 
+ import type { MessageRendererInterface } from '../index';
++import { widthPercentageToDP as wp } from 'react-native-responsive-screen';
++import { CONST_TYPES, getChannelWithCustomType } from '../../../../../../../src/uikit-app';
++import { channel } from 'diagnostics_channel';
++import { useSendbirdChat } from '@sendbird/uikit-react-native/src/hooks/useContext';
++import { useAppNavigation } from '../../../../../../../src/hooks/useAppNavigation';
+ 
+ export type AdminMessageProps = MessageRendererInterface<SendbirdAdminMessage>;
+ const AdminMessage = ({ message, nextMessage }: AdminMessageProps) => {
+   const { colors } = useUIKitTheme();
+ 
+   const isNextAdmin = nextMessage?.isAdminMessage();
++
++  const {navigation, params} = useAppNavigation<Routes.GroupChannelInvite>();
++
++  // @ts-ignore
++  const {sdk} = useSendbirdChat();
++  const [channel] = useState(() =>
++    sdk.GroupChannel.buildFromSerializedData(params.serializedChannel),
++  );
++
++  const identifier =
++  getChannelWithCustomType(channel).customType === CONST_TYPES.ROOM_GROUP
++    ? 'admins'
++    : 'operators'
++
++  console.log("Admin Message: " + message.message);
+   return (
+     <View style={StyleSheet.flatten([styles.container, isNextAdmin ? styles.nextAdminType : styles.next])}>
+-      <Text caption2 color={colors.onBackground02} style={styles.text}>
+-        {message.message}
++      <Text color={colors.onBackground02} style={[styles.text, { fontSize: wp(global.fontSize == 'm' ? 3.5 : global.fontSize == 's' ? 3 : 4.5) }]}>
++        { identifier === 'admins' && message.message}
++        { identifier === 'operators' && message.message.replace("admin.", "operator.") }
+       </Text>
+     </View>
+   );
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/AudioFileMessage.tsx b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/AudioFileMessage.tsx
+new file mode 100644
+index 0000000..e2317df
+--- /dev/null
++++ b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/AudioFileMessage.tsx
+@@ -0,0 +1,249 @@
++// @ts-ignore
++import React, {useState, useRef, useEffect} from 'react';
++import { Pressable, View, Alert, ActivityIndicator, Animated, Platform } from "react-native";
++import Slider from '@react-native-community/slider';
++import { EventRegister } from 'react-native-event-listeners'
++import {
++  widthPercentageToDP as wp,
++  heightPercentageToDP as hp
++} from 'react-native-responsive-screen';
++import { Icon, Text, createStyleSheet } from '@sendbird/uikit-react-native-foundation';
++
++import type { FileMessageProps } from './index';
++import { useEventEmitter } from "../../../../../../../src/hooks/useEventEmitter";
++import { checkFileExists, downloadFile, makeAudioPath } from "../../../../../../../src/uikit-app";
++import AudioRecorderPlayer, {PlayBackType} from 'react-native-audio-recorder-player';
++import { useSendbirdChat } from "@sendbird/uikit-react-native/src";
++
++
++const AnimatedSlider = Animated.createAnimatedComponent(Slider);
++
++// const AnimatedSlider = () => {
++//   return (
++//     <Slider
++//       minimumValue={0}
++//       maximumValue={1}
++//       disabled={playerState !== PLAYING}
++//       thumbTintColor={'transparent'}
++//       maximumTrackTintColor={'#f4f5f6'}
++//       style={{width: wp('100%') / 2.5}}
++//       minimumTrackTintColor={
++//         playerState === PLAYING ||
++//         playerState === PAUSED
++//           ? '#6529e2' : '#f4f5f6'
++//       }
++//       value={playerProgressAnim}
++//     />
++//   )
++// }
++
++type Props = FileMessageProps & {
++  type: 'audio';
++};
++
++const STOPPED = 0;
++const DOWNLOAD = 1;
++const PLAYING = 2;
++const DOWNLOADING = 3;
++const PAUSED = 4;
++
++let isFileDownloading = false;
++
++const AudioFileMessage = ({ message, variant, pressed, type }: Props) => {
++  const {sdk}: any = useSendbirdChat();
++  const refFileMessage = useRef(sdk.FileMessage.buildFromSerializedData(
++    message.serialize()
++  ));
++  const refPlayerState = useRef(STOPPED);
++  const refAudioExists = useRef(false);
++  const playerProgressAnim = useRef(new Animated.Value(0)).current;
++  const refAudioPlayerRecorder = useRef(new AudioRecorderPlayer());
++  const refAudioPath = useRef(makeAudioPath(message.name));
++  const [playerState, setPlayerState] = useState(DOWNLOAD);
++  const [playerProgress, setPlayerProgress] = useState({
++    currentPositionSec: 0,
++    currentDurationSec: 1,
++    playTime: 0,
++    duration: 0,
++  })
++
++  useEffect(() => {
++    Animated.timing(playerProgressAnim, {
++      toValue: playerProgress.currentPositionSec / playerProgress.currentDurationSec,
++      duration: 500,
++      useNativeDriver: false,
++    }).start();
++  }, [playerProgress]);
++
++  useEffect(() => {
++    checkFileExists(refAudioPath.current, exist => {
++      if (exist) {
++        console.log(`file ${exist ? '' : 'not'} exists`);
++      }
++      refAudioExists.current = exist;
++    });
++  }, []);
++
++  useEventEmitter('on-stop-event', data => {
++    if (refPlayerState?.current === PLAYING || refPlayerState?.current === PAUSED) {
++      onStopPlay();
++      setPlayerProgress(() => {
++        return {
++          currentPositionSec: 0,
++          currentDurationSec: 1,
++          playTime: 0,
++          duration: 0,
++        };
++      });
++      setPlayerState(() => {
++        refPlayerState.current = STOPPED;
++        return refPlayerState.current;
++      });
++    }
++  });
++
++  const onStartPlay = async () => {
++    console.log('message.name => ', message.name);
++    const msg = await refAudioPlayerRecorder?.current?.startPlayer(
++      Platform.OS === 'android' ?
++        makeAudioPath(message.name) : message.name
++    );
++    const volume = await refAudioPlayerRecorder?.current?.setVolume(1.0);
++    console.log('Path to play ==> ', msg);
++    refAudioPlayerRecorder?.current?.addPlayBackListener((e: PlayBackType) => {
++      // console.log('hello => ', e);
++
++      if (e.currentPosition === e.duration) {
++        // TODO: Stop already playing audio...
++        EventRegister.emitEvent('on-stop-event', 'Bye old audio.')
++      }
++
++      setPlayerProgress(() => {
++        return {
++          currentPositionSec: e.currentPosition,
++          currentDurationSec: e.duration,
++          playTime: refAudioPlayerRecorder?.current?.mmssss(
++            Math.floor(e.currentPosition),
++          ),
++          duration: refAudioPlayerRecorder?.current?.mmssss(Math.floor(e.duration)),
++        }
++      });
++    });
++  };
++
++  const onPausePlay = async () => {
++    await refAudioPlayerRecorder?.current?.pausePlayer();
++  };
++
++  const onResumePlay = async () => {
++    await refAudioPlayerRecorder?.current?.resumePlayer();
++  };
++
++  const onStopPlay = async () => {
++    refAudioPlayerRecorder?.current?.stopPlayer();
++    refAudioPlayerRecorder?.current?.removePlayBackListener();
++  };
++
++  const playAudio = (toggle: boolean = false) => {
++    if (toggle && playerState === PLAYING) {
++      onPausePlay();
++      setPlayerState(() => {
++        refPlayerState.current = PAUSED;
++        return refPlayerState.current;
++      });
++    } else {
++      if (refAudioPlayerRecorder?.current?._hasPaused) {
++        onResumePlay();
++      } else {
++        // TODO: Stop already playing audio...
++        EventRegister.emitEvent('on-stop-event', 'Bye old audio.')
++
++        onStartPlay();
++      }
++      setPlayerState(() => {
++        refPlayerState.current = PLAYING;
++        return refPlayerState.current;
++      });
++    }
++  }
++
++  return (
++    <View style={[styles.container, { backgroundColor: '#dfe8f2' }]}>
++      <Pressable
++        disabled={playerState === DOWNLOADING}
++        onPress={() => {
++          if (isFileDownloading) {
++            Alert.alert(
++              'Already Downloading',
++              'You can download one file at a time please try once current download is complete.'
++            );
++            return;
++          }
++          if (refAudioExists.current) {
++            playAudio(true);
++          } else {
++            setPlayerState(() => DOWNLOADING);
++            isFileDownloading = true;
++            downloadFile(refFileMessage?.current?.url, message.name)
++              .then(res => {
++                console.log("res (download) => ", JSON.stringify(res));
++                isFileDownloading = false;
++                refAudioExists.current = true;
++                playAudio();
++              })
++              .catch(e => {
++                console.log("download (error) => ", e.message);
++                isFileDownloading = false;
++                setPlayerState(() => STOPPED);
++              });
++          }
++        }}
++        style={{marginRight: 8}}>
++        {playerState === DOWNLOADING ? (
++          <ActivityIndicator color={'#6529e2'} size={'small'} />
++        ) : (
++          <Icon
++            size={28}
++            icon={playerState === PLAYING ? 'pause' : 'streaming'}
++            color={'#6529e2'}
++          />
++        )}
++      </Pressable>
++
++      <AnimatedSlider
++        minimumValue={0}
++        maximumValue={1}
++        onSlidingStart={value => {
++          console.log('onSlidingStart => ', value);
++        }}
++        onSlidingComplete={value => {
++          refAudioPlayerRecorder.current.seekToPlayer(value * playerProgress.currentDurationSec);
++        }}
++        // onValueChange={val => console.log('progress => ', val)}
++        disabled={playerState !== PLAYING}
++        thumbTintColor={'transparent'}
++        maximumTrackTintColor={'#f4f5f6'}
++        style={{width: wp('100%') / 2.5}}
++        minimumTrackTintColor={
++          playerState === PLAYING ||
++          playerState === PAUSED
++            ? '#6529e2' : '#f4f5f6'
++        }
++        value={playerProgressAnim}
++      />
++    </View>
++  );
++};
++
++const styles = createStyleSheet({
++  container: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 8,
++    paddingVertical: 4,
++    borderRadius: 26,
++  },
++});
++
++export default AudioFileMessage;
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/VideoFileMessage.tsx b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/VideoFileMessage.tsx
+index 5e68c67..dcc988f 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/VideoFileMessage.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/VideoFileMessage.tsx
+@@ -1,5 +1,6 @@
++// @ts-ignore
+ import React, { useEffect, useRef, useState } from 'react';
+-import { View } from 'react-native';
++import { View, Platform } from 'react-native';
+ 
+ import { Icon, Image, createStyleSheet, useUIKitTheme } from '@sendbird/uikit-react-native-foundation';
+ import { getAvailableUriFromFileMessage } from '@sendbird/uikit-utils';
+@@ -12,9 +13,16 @@ const useRetry = (videoFileUrl: string, retryCount = 5) => {
+   const retryCountRef = useRef(0);
+   const retryTimeoutRef = useRef<NodeJS.Timeout>();
+ 
++  // @ts-ignore
+   const { mediaService } = usePlatformService();
+ 
++  const getAndroidThumbnail = async videoUrl => videoUrl;
++
+   const fetchThumbnail = () => {
++    if (Platform.OS === 'android') {
++      return getAndroidThumbnail(videoFileUrl).then((result) => setState({ loading: false, thumbnail: result?.path ?? null }));
++    }
++
+     return mediaService?.getVideoThumbnail({ url: videoFileUrl, timeMills: 1000 }).then((result) => {
+       setState({ loading: false, thumbnail: result?.path ?? null });
+     });
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/index.tsx b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/index.tsx
+index f4c2015..69f9898 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/index.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/FileMessage/index.tsx
+@@ -1,21 +1,29 @@
++// @ts-ignore
+ import React from 'react';
+-
++import {Platform} from 'react-native';
+ import { SendbirdFileMessage, getFileExtension, getFileType } from '@sendbird/uikit-utils';
+ 
+ import { usePlatformService } from '../../../hooks/useContext';
+ import type { MessageRendererInterface } from '../index';
+ import BaseFileMessage from './BaseFileMessage';
++import AudioFileMessage from './AudioFileMessage';
+ import ImageFileMessage from './ImageFileMessage';
+ import VideoFileMessage from './VideoFileMessage';
+ 
+ export type FileMessageProps = MessageRendererInterface<SendbirdFileMessage>;
+ const FileMessage = (props: FileMessageProps) => {
++  // @ts-ignore
+   const { mediaService } = usePlatformService();
+ 
+   const fileType = getFileType(props.message.type || getFileExtension(props.message.name));
+ 
+   if (fileType === 'image') return <ImageFileMessage {...props} />;
+-  if (fileType === 'video' && mediaService?.getVideoThumbnail) return <VideoFileMessage {...props} />;
++  if (fileType === 'audio') return <AudioFileMessage {...props} type={fileType} />;
++  if (Platform.OS === 'android' && fileType === 'video') {
++    return <VideoFileMessage {...props} />;
++  } else if (fileType === 'video' && mediaService?.getVideoThumbnail) {
++    return <VideoFileMessage {...props} />;
++  }
+ 
+   return <BaseFileMessage {...props} type={fileType} />;
+ };
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/MessageIncomingSenderName.tsx b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/MessageIncomingSenderName.tsx
+index 9f42bac..874a042 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/MessageIncomingSenderName.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/MessageIncomingSenderName.tsx
+@@ -5,6 +5,7 @@ import { Text, createStyleSheet, useUIKitTheme } from '@sendbird/uikit-react-nat
+ import type { SendbirdMessage } from '@sendbird/uikit-utils';
+ 
+ import { useLocalization } from '../../hooks/useContext';
++import { getrelamContactName } from '../../../../../../src/commonAction';
+ 
+ type Props = {
+   message: SendbirdMessage;
+@@ -19,7 +20,8 @@ const MessageIncomingSenderName = ({ message, grouping }: Props) => {
+     <View style={styles.sender}>
+       {(message.isFileMessage() || message.isUserMessage()) && (
+         <Text caption1 color={colors.ui.message.incoming.enabled.textSenderName} numberOfLines={1}>
+-          {message.sender?.nickname || STRINGS.LABELS.USER_NO_NAME}
++          {/*{message.sender?.nickname || STRINGS.LABELS.USER_NO_NAME}*/}
++          {getrelamContactName(message.sender?.metaData.phone) || STRINGS.LABELS.USER_NO_NAME}
+         </Text>
+       )}
+     </View>
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/MessageTime.tsx b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/MessageTime.tsx
+index 1c276fe..496652d 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/MessageTime.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/MessageTime.tsx
+@@ -5,6 +5,7 @@ import { Text, useUIKitTheme } from '@sendbird/uikit-react-native-foundation';
+ import type { SendbirdMessage } from '@sendbird/uikit-utils';
+ 
+ import { useLocalization } from '../../hooks/useContext';
++import { widthPercentageToDP as wp } from 'react-native-responsive-screen';
+ 
+ type Props = {
+   message: SendbirdMessage;
+@@ -18,7 +19,7 @@ const MessageTime = ({ message, grouping, style }: Props) => {
+ 
+   return (
+     <View style={style}>
+-      <Text caption4 color={colors.ui.message.incoming.enabled.textTime}>
++      <Text color={colors.ui.message.incoming.enabled.textTime} style={{ fontSize: wp(global.fontSize == 'm' ? 3.5 : global.fontSize == 's' ? 3 : 4.5) }}>
+         {STRINGS.GROUP_CHANNEL.MESSAGE_BUBBLE_TIME(message)}
+       </Text>
+     </View>
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/UserMessage/BaseUserMessage.tsx b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/UserMessage/BaseUserMessage.tsx
+index be2f655..609ea0c 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/UserMessage/BaseUserMessage.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/UserMessage/BaseUserMessage.tsx
+@@ -1,25 +1,86 @@
+-import React from 'react';
+-import { View } from 'react-native';
++import React, { useState } from 'react';
++import { View, Text as Mtext } from 'react-native';
+ 
+ import { Text, URLParsedText, createStyleSheet, useUIKitTheme } from '@sendbird/uikit-react-native-foundation';
+ 
++
++import { useAppNavigation } from '../../../../../../../src/hooks/useAppNavigation';
++import { Routes } from '../../../../../../../src/libs/navigation';
++
+ import { useLocalization } from '../../../hooks/useContext';
+ import type { UserMessageProps } from './index';
+ 
++import { getrelamContactName } from '../../../../../../../src/commonAction';
++import Loading from '../../../../../../../src/components/Loading';
++import { useNavigation } from '@react-navigation/native';
++import { useSendbirdChat } from '@sendbird/uikit-react-native';
++import { widthPercentageToDP as wp } from 'react-native-responsive-screen';
++
+ const BaseUserMessage = ({ message, variant, pressed }: UserMessageProps) => {
+   const { colors } = useUIKitTheme();
+   const color = colors.ui.message[variant][pressed ? 'pressed' : 'enabled'];
+   const { STRINGS } = useLocalization();
++  // const { navigate } = useNavigation();
++  const { navigation, params } = useAppNavigation<Routes.GroupChannel>();
++  const { sdk, currentUser } = useSendbirdChat();
++  const [isLoading, setIsLoading] = useState(false);
++
++  const onProfileView = async (message: any, mobile_no: any) => {
++    setIsLoading(true)
++    const channel = await sdk.GroupChannel.getChannel(message?.channelUrl);
++
++    let resolveParam: any;
++    let data: any = [];
++    console.log("log channel")
++    console.log(channel)
++    resolveParam = new Promise((resolve, reject) => {
++      channel?.members.map(val => {
++        if (val?.metaData?.phone == mobile_no) {
++          if (val?.userId != currentUser.userId) {
++            data.push(val)
++          }
++        }
++      })
++      resolve()
++    });
++    resolveParam.then(async () => {
++
++      setIsLoading(false)
++      if (data.length > 0) {
++        navigation.navigate('ProfileView', { data: data[0], channelUrl: channel?.url, is_super: channel?.isSuper })
++      }
++    })
++  }
++
++
++  const CustomText = (props: any) => {
++    const message = props.message.message.split(' ');
++    return <Mtext style={{ fontSize: wp(global.fontSize == 'm' ? 3.5 : global.fontSize == 's' ? 3 : 4.5) }}>{message.map((text: any, index: any) => {
++      if (text.includes('@+')) {
++        return <Text onPress={() => { onProfileView(props.message, text.slice(1)) }} color={'#3F9AFF'} style={{ textDecorationLine: 'underline' }}>{text.slice(1) == currentUser.metaData?.phone ? ('@' + getrelamContactName(text.slice(1)) + '(You)') : '@' + getrelamContactName(text.slice(1))}</Text>;
++      } else if (text == '@Group') {
++        return <Text onPress={() => { navigation.navigate(Routes.GroupChannelSettings, { serializedChannel: params.serializedChannel }); }} color={'#3F9AFF'} style={{ textDecorationLine: 'underline' }}>{'@Group'}</Text>;
++      } else if (text == '@Channel') {
++        return <Text onPress={() => { navigation.navigate(Routes.GroupChannelSettings, { serializedChannel: params.serializedChannel }); }} color={'#3F9AFF'} style={{ textDecorationLine: 'underline' }}>{'@Channel'}</Text>;
++      } else {
++        return `${text} `;
++      }
++    })}</Mtext>;
++  }
++
+   return (
+     <View style={[styles.container, { backgroundColor: color.background }]}>
+       <URLParsedText body3 strict color={color.textMsg}>
+-        {message.message}
++        {/*{message.message}*/}
++        {/* {message.mentionedMessageTemplate == null ? message.message : <CustomText message={message.message} />} */}
++        <CustomText message={message} />
+         {Boolean(message.updatedAt) && (
+           <Text body3 color={color.textEdited}>
+             {STRINGS.GROUP_CHANNEL.MESSAGE_BUBBLE_EDITED_POSTFIX}
+           </Text>
+         )}
+       </URLParsedText>
++      <Loading visible={isLoading} />
+     </View>
+   );
+ };
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/index.tsx b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/index.tsx
+index 5e96d4b..a1a135a 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/index.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/MessageRenderer/index.tsx
+@@ -17,6 +17,9 @@ import MessageOutgoingStatus from './MessageOutgoingStatus';
+ import MessageTime from './MessageTime';
+ import UnknownMessage from './UnknownMessage';
+ import UserMessage from './UserMessage';
++import { CONST_TYPES, getChannelWithCustomType } from '../../../../../../src/uikit-app';
++import Strings from '../../../../../../src/string_key/Strings';
++
+ 
+ type MessageStyleVariant = 'outgoing' | 'incoming';
+ export interface MessageRendererInterface<T = SendbirdMessage> {
+@@ -76,7 +79,95 @@ const MessageRenderer: GroupChannelProps['Fragment']['renderMessage'] = ({
+     }
+ 
+     if (message.isAdminMessage()) {
+-      return <AdminMessage message={message} pressed={false} {...messageProps} />;
++      let text = message.message
++        .replace('operator', 'admin')
++        .replace('cover_url', 'image');
++      let groupText = message.message
++        .replace('operator', 'admin')
++        .replace('cover_url', 'image');
++      const hasChannel = text.toLowerCase().includes('channel');
++
++      text = text.replace('is now an admin.', Strings.is_now_an_admin);
++      text = text.replace('is no longer an admin.', Strings.msg_no_longer_admin);
++      text = text.replace('and', Strings.and);
++      text = text.replace('joined.', Strings.joined_dot);
++      text = text.replace('left.', Strings.left_leave);
++
++      groupText = groupText.replace('is no longer an admin.', Strings.msg_no_longer_admin);
++      groupText = groupText.replace('is now an admin.', Strings.is_now_an_admin);
++      groupText = groupText.replace('and', Strings.and);
++      groupText = groupText.replace('joined.', Strings.joined_dot);
++      groupText = groupText.replace('left.', Strings.left_leave);
++
++      text = text.replace('The channel is created.', Strings.msg_channel_created);
++
++      const _message = {
++        ...message,
++        message: text,
++      }
++
++      groupText = groupText.replace('channel', 'group')
++        .replace('The group is created.', Strings.msg_group_created);
++
++      const groupMessage = {
++        ..._message,
++        message: groupText,
++      }
++
++      const {customType} = getChannelWithCustomType(channel);
++
++      if (customType === CONST_TYPES.ROOM_GROUP) {
++        // Group
++        return (
++          <AdminMessage
++            pressed={false}
++            {...messageProps}
++            message={hasChannel ? groupMessage : _message}
++          />
++        );
++      } else if (customType === CONST_TYPES.ROOM_CHANNEL) {
++        // Channel
++        return (
++          <AdminMessage
++            pressed={false}
++            {...messageProps}
++            message={_message}
++          />
++        );
++      } else {
++        // Direct
++        return null;
++      }
++
++      // switch (channel.customType) {
++      //   case CONST_TYPES.ROOM_GROUP:
++      //     return (
++      //       <AdminMessage
++      //         pressed={false}
++      //         {...messageProps}
++      //         message={hasChannel ? groupMessage : _message}
++      //       />
++      //     );
++      //   case CONST_TYPES.ROOM_CHANNEL:
++      //     return (
++      //       <AdminMessage
++      //         pressed={false}
++      //         {...messageProps}
++      //         message={hasChannel ? _message : groupMessage}
++      //       />
++      //     );
++      //   case CONST_TYPES.ROOM_DIRECT:
++      //     return null;
++      //   default:
++      //     return (
++      //       <AdminMessage
++      //         pressed={false}
++      //         {...messageProps}
++      //         message={_message}
++      //       />
++      //     );
++      // }
++      // return null;
+     }
+ 
+     return (
+diff --git a/node_modules/@sendbird/uikit-react-native/src/components/UserActionBar.tsx b/node_modules/@sendbird/uikit-react-native/src/components/UserActionBar.tsx
+index e62628c..d7e4ba6 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/components/UserActionBar.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/components/UserActionBar.tsx
+@@ -1,5 +1,5 @@
+ import React from 'react';
+-import { TouchableOpacity, View } from 'react-native';
++import { Pressable, View } from "react-native";
+ 
+ import { Avatar, Icon, Text, createStyleSheet, useUIKitTheme } from '@sendbird/uikit-react-native-foundation';
+ import { conditionChaining } from '@sendbird/uikit-utils';
+@@ -18,7 +18,8 @@ const UserActionBar = ({ muted, uri, name, disabled, onPressActionMenu, label }:
+   const iconColor = conditionChaining([disabled], [colors.onBackground04, colors.onBackground01]);
+ 
+   return (
+-    <View style={styles.container}>
++    <Pressable style={styles.container} onPress={onPressActionMenu} disabled={disabled}>
++
+       <Avatar muted={muted} size={36} uri={uri} containerStyle={styles.avatar} />
+       <View style={[styles.infoContainer, { borderBottomColor: colors.onBackground04 }]}>
+         <Text subtitle2 numberOfLines={1} style={styles.name} color={colors.onBackground01}>
+@@ -29,13 +30,13 @@ const UserActionBar = ({ muted, uri, name, disabled, onPressActionMenu, label }:
+             {label}
+           </Text>
+         )}
+-        {Boolean(onPressActionMenu) && (
++        {/*{Boolean(onPressActionMenu) && (
+           <TouchableOpacity onPress={onPressActionMenu} disabled={disabled}>
+             <Icon color={iconColor} size={24} icon={'more'} containerStyle={styles.iconContainer} />
+           </TouchableOpacity>
+-        )}
++        )}*/}
+       </View>
+-    </View>
++    </Pressable>
+   );
+ };
+ 
+diff --git a/node_modules/@sendbird/uikit-react-native/src/containers/GroupChannelPreviewContainer.tsx b/node_modules/@sendbird/uikit-react-native/src/containers/GroupChannelPreviewContainer.tsx
+index f6290e7..7330d09 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/containers/GroupChannelPreviewContainer.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/containers/GroupChannelPreviewContainer.tsx
+@@ -1,3 +1,4 @@
++// @ts-ignore
+ import React, { useState } from 'react';
+ import { Pressable } from 'react-native';
+ 
+@@ -23,8 +24,10 @@ import {
+ import ChannelCover from '../components/ChannelCover';
+ import { DEFAULT_LONG_PRESS_DELAY } from '../constants';
+ import { useLocalization, useSendbirdChat } from '../hooks/useContext';
+-
+-const iconMapper = { audio: 'file-audio', image: 'photo', video: 'play', file: 'file-document' } as const;
++import { getrelamContactName } from '../../../../../src/commonAction';
++import { useEventEmitter } from '../../../../../src/hooks/useEventEmitter';
++const iconMapper = { audio: 'microphone', image: 'photo', video: 'play', file: 'file-document' } as const;
++const iconText = { audio: 'Audio', image: 'Photo', video: 'Video', file: 'File' } as const;
+ 
+ type Props = {
+   channel: SendbirdGroupChannel;
+@@ -32,10 +35,13 @@ type Props = {
+   onLongPress: () => void;
+ };
+ const GroupChannelPreviewContainer = ({ onPress, onLongPress, channel }: Props) => {
++  // @ts-ignore
+   const { currentUser, sdk, features } = useSendbirdChat();
++  // @ts-ignore
+   const { STRINGS } = useLocalization();
+   const { colors } = useUIKitTheme();
+ 
++  const [renderKey, setRenderKey] = useState(32132);
+   const [typingUsers, setTypingUsers] = useState<SendbirdUser[]>([]);
+ 
+   if (features.channelListTypingIndicatorEnabled) {
+@@ -51,8 +57,14 @@ const GroupChannelPreviewContainer = ({ onPress, onLongPress, channel }: Props)
+   const outgoingStatus = useMessageOutgoingStatus(sdk, channel, channel.lastMessage);
+ 
+   const bodyText = useIIFE(() => {
+-    if (typingUsers.length > 0) return STRINGS.LABELS.TYPING_INDICATOR_TYPINGS(typingUsers) || '';
+-    else return STRINGS.GROUP_CHANNEL_LIST.CHANNEL_PREVIEW_BODY(channel);
++    // if (typingUsers.length > 0) return STRINGS.LABELS.TYPING_INDICATOR_TYPINGS(typingUsers) || '';
++    // else return STRINGS.GROUP_CHANNEL_LIST.CHANNEL_PREVIEW_BODY(channel);
++    if (channel.lastMessage?.type) {
++      return iconText[getFileType(channel.lastMessage.type || getFileExtension(channel.lastMessage.name))];
++    } else {
++      if (typingUsers.length > 0) return STRINGS.LABELS.TYPING_INDICATOR_TYPINGS(typingUsers) || '';
++      else return STRINGS.GROUP_CHANNEL_LIST.CHANNEL_PREVIEW_BODY(channel);
++    }
+   });
+ 
+   const bodyIcon = useIIFE(() => {
+@@ -89,20 +101,33 @@ const GroupChannelPreviewContainer = ({ onPress, onLongPress, channel }: Props)
+     return undefined;
+   });
+ 
++  useEventEmitter('contacts-synced', () => {
++    setRenderKey(prevState => ++prevState);
++  });
++
+   return (
+-    <Pressable delayLongPress={DEFAULT_LONG_PRESS_DELAY} onPress={onPress} onLongPress={onLongPress}>
++    <Pressable delayLongPress={DEFAULT_LONG_PRESS_DELAY} onPress={() => {
++      channel?.markAsRead();
++      onPress();
++    }} onLongPress={onLongPress}>
+       <GroupChannelPreview
+-        customCover={<ChannelCover channel={channel} size={56} />}
+-        coverUrl={channel.coverUrl}
++        key={renderKey}
++        customCover={<ChannelCover channel={channel} size={56} isPreview={true} />}
++        coverUrl={channel?.coverUrl}
++        // title={(channel.isPublic == false && channel.isDistinct == true) ? STRINGS.GROUP_CHANNEL_LIST.CHANNEL_PREVIEW_TITLE(currentUser?.userId ?? '', channel) :  STRINGS.GROUP_CHANNEL_LIST.CHANNEL_PREVIEW_TITLE(currentUser?.userId ?? '', channel)}
++
+         title={STRINGS.GROUP_CHANNEL_LIST.CHANNEL_PREVIEW_TITLE(currentUser?.userId ?? '', channel)}
+         titleCaptionLeft={titleCaptionIcon}
+         titleCaption={STRINGS.GROUP_CHANNEL_LIST.CHANNEL_PREVIEW_TITLE_CAPTION(channel)}
+         body={bodyText}
++        // @ts-ignore
+         bodyIcon={bodyIcon}
+-        badgeCount={channel.unreadMessageCount}
+-        memberCount={channel.memberCount > 2 ? channel.memberCount : undefined}
+-        frozen={channel.isFrozen}
+-        notificationOff={channel.myPushTriggerOption === 'off'}
++        badgeCount={channel?.unreadMessageCount}
++        // memberCount={channel.memberCount > 2 ? channel.memberCount : undefined}
++        memberCount={channel?.unreadMentionCount > 0 ? channel?.unreadMentionCount : undefined}
++
++        frozen={channel?.isFrozen}
++        notificationOff={channel?.myPushTriggerOption === 'off'}
+       />
+     </Pressable>
+   );
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelHeader.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelHeader.tsx
+index 9f051aa..fa94fc7 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelHeader.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelHeader.tsx
+@@ -1,35 +1,345 @@
+-import React, { useContext } from 'react';
+-import { View } from 'react-native';
++// @ts-ignore
++import React, { useContext, useState, useEffect, useRef } from 'react';
++import { View, Pressable, Image, TouchableOpacity, Alert, Linking } from 'react-native';
++// @ts-ignore
++import moment from 'moment';
++import AsyncStorage from '@react-native-community/async-storage';
++import MarqueeText from 'react-native-marquee';
++import BackgroundTimer from 'react-native-background-timer';
+ 
+ import { Header, Icon, createStyleSheet, useHeaderStyle } from '@sendbird/uikit-react-native-foundation';
+-
++import {
++  widthPercentageToDP as wp,
++  heightPercentageToDP as hp,
++} from 'react-native-responsive-screen';
+ import ChannelCover from '../../../components/ChannelCover';
+ import { useLocalization } from '../../../hooks/useContext';
+ import { GroupChannelContexts } from '../module/moduleContext';
+ import type { GroupChannelProps } from '../types';
+-
+-const GroupChannelHeader = ({ onPressHeaderLeft, onPressHeaderRight }: GroupChannelProps['Header']) => {
++import { useSendbirdChat } from "@sendbird/uikit-react-native/src/hooks/useContext";
++import { CONST_TYPES, getChannelWithCustomType } from '../../../../../../../src/uikit-app';
++import { images } from '../../../../../../../src/res/images';
++import { useDirectNavigation } from '../../../../../../../src/navigations/useDirectNavigation';
++import { SendbirdCalls } from '@sendbird/calls-react-native';
++import { DirectRoutes } from '../../../../../../../src/navigations/routes';
++import useUIKitTheme from "@sendbird/uikit-react-native-foundation/src/theme/useUIKitTheme";
++import Permissions, { PERMISSIONS } from 'react-native-permissions';
++import nativePermissionGranted from '@sendbird/uikit-react-native/src/utils/nativePermissionGranted';
++import { CALL_PERMISSIONS } from '../../../../../../../src/hooks/usePermissions';
++import Strings from '../../../../../../../src/string_key/Strings';
++const GroupChannelHeader = ({ onPressHeaderLeft, onPressHeaderRight, onPressHeaderSecondRight, onProfilePressed }: GroupChannelProps['Header']) => {
++  const { currentUser, sdk } = useSendbirdChat();
++  const refOnlineInterval = useRef(null);
+   const { headerTitle, channel } = useContext(GroupChannelContexts.Fragment);
+   const { typingUsers } = useContext(GroupChannelContexts.TypingIndicator);
+   const { STRINGS } = useLocalization();
++  const { colors } = useUIKitTheme();
+   const { HeaderComponent } = useHeaderStyle();
+   const subtitle = STRINGS.LABELS.TYPING_INDICATOR_TYPINGS(typingUsers);
+ 
++  const [lastSeenText, setLastSeenText] = useState('');
++  const [oneTooneMember, setOnetoOneMember] = useState([]);
++  const { navigation } = useDirectNavigation();
++
++  useEffect(() => {
++    if (getChannelWithCustomType(channel).customType === CONST_TYPES.ROOM_DIRECT) {
++      var newArray = channel?.members.filter(function (el) {
++        return el.userId != currentUser.userId
++      });
++      setOnetoOneMember(newArray);
++    }
++  }, [channel]);
++
++  const udpateLastSeenInfo = () => {
++    channel.refresh((ch, e) => {
++      if (e?.code === 500910 && refOnlineInterval.current !== null) {
++        clearInterval(refOnlineInterval.current);
++        refOnlineInterval.current = null;
++        refOnlineInterval.current = setInterval(
++          () => udpateLastSeenInfo(), 5000
++        );
++      } else {
++
++        const currentChatUser = ch?.members?.filter(
++          (m) => m.userId !== currentUser.userId
++        )[0]        
++        let isLastSeenEnabled = setLastSeenValue(currentChatUser.metaData)
++        if (isLastSeenEnabled === true) {
++          setLastSeenText(() => {
++            const lastSeenTime = ch?.members?.filter(
++              (m) => m.userId !== currentUser.userId
++            )[0]?.lastSeenAt;
++  
++            let lastSeenString = '';
++  
++            if (typeof lastSeenTime === 'number') {
++              if (lastSeenTime === 0) {
++                lastSeenString = 'Online';
++              } else if (lastSeenTime > 0) {
++                var a = moment();
++                var b = moment(lastSeenTime);
++                const differenceInDays = a.diff(b, 'days');
++  
++                if (differenceInDays < 1) /* Same day */ {
++                  lastSeenString = `Last seen ${moment(lastSeenTime).format('hh:mm A')}`;
++                } else if (differenceInDays < 2) /* Yesterday */ {
++                  lastSeenString = `Last seen yesterday, ${moment(lastSeenTime).format('hh:mm A')}`;
++                } else if (differenceInDays >= 2 && differenceInDays <= 6) /* same week */ {
++                  lastSeenString = `Last seen ${moment(lastSeenTime).format('dddd, hh:mm A')}`;
++                } else if (differenceInDays >= 7 && differenceInDays <= 13) /* 1 week ago */ {
++                  lastSeenString = 'Last seen 1 week ago';
++                } else if (differenceInDays >= 14 && differenceInDays <= 27) /* 2 weeks ago */ {
++                  lastSeenString = 'Last seen few weeks ago';
++                } else {
++                  lastSeenString = `Last seen ${moment(lastSeenTime).format('DD/MM/YYYY')}`;
++                }
++              }
++            }
++  
++            // const lastSeenString = typeof lastSeenTime === 'number' ?
++            //   lastSeenTime === 0 ? 'Online' : lastSeenTime > 0 ? 'Last seen ' + moment
++            //     .utc(lastSeenTime)
++            //     .local()
++            //     .startOf('seconds')
++            //     .fromNow() : '' : '';
++  
++            return lastSeenString;
++          });
++        }else{
++          setLastSeenText('')
++        }
++
++       
++      }
++    });
++  }
++
++  const setLastSeenValue = (metaData) => {
++    let meta = metaData;
++    console.log('meta ==> ');
++    let userConfig = meta.UserConfigInfo
++    try {
++      let showLastSeen =  JSON.parse(userConfig).showLastSeen;
++      console.log("Show Last Seens",showLastSeen);
++      switch(showLastSeen) {
++        case true:
++          // code block
++          return true
++          break;
++        case false:
++          return false
++          break;
++        default:
++          break
++      }
++    }
++    catch(err) {
++      console.log(err.message);
++      return true
++    }
++
++  }
++
++  useEffect(() => {
++    if (refOnlineInterval?.current !== null) {
++      clearInterval(refOnlineInterval.current);
++    }
++
++    AsyncStorage.getItem('show-last-seen')
++      .then(s => typeof s !== 'string' ? true : JSON.parse(s))
++      .then(show => {
++
++
++        if (getChannelWithCustomType(channel).customType === CONST_TYPES.ROOM_DIRECT) {
++          if (channel.memberCount === 2) {
++            udpateLastSeenInfo();
++            refOnlineInterval.current = setInterval(
++              () => udpateLastSeenInfo(), 5000
++            );
++          }
++        }
++        // if (show) {
++         
++        // }else{
++        //   console.warn("Last seen have some issues MAVRIK")
++        // }
++      })
++
++    return () => {
++      if (refOnlineInterval?.current !== null) {
++        clearInterval(refOnlineInterval.current);
++        refOnlineInterval.current = null;
++      }
++    }
++  }, []);
++
++  const onNavigate = (callProps: any) => {
++    if (callProps.isVideoCall) {
++      navigation.navigate(DirectRoutes.VIDEO_CALLING, { callId: callProps.callId });
++    } else {
++      navigation.navigate(DirectRoutes.VOICE_CALLING, { callId: callProps.callId });
++    }
++  };
++
++  const getSendbirdUserById = async userId => {
++    try {
++      const query = sdk.createUserListQuery([userId]);
++      const users = await query.next();
++      return users[0];
++    } catch (e) {
++      console.log('error (getSendbirdUserById) => ', e.message);
++      return null;
++    }
++  };
++
++  const onDial = async (userId: any, isVideoCall: any) => {
++    // const users = channel?.members?.filter(m => m?.userId === userId);
++    const user = await getSendbirdUserById(userId);
++    let metadate = user?.metaData;
++    // if (users?.length > 0) {
++    //   metadate = users[0]?.metaData;
++    // }
++    if (metadate !== null && metadate !== undefined) {
++      let snoozeData, dndData;
++      const currentDate = new Date();
++      if (metadate?.DNDData?.length > 0) {
++        dndData = JSON.parse(metadate?.DNDData);
++
++        const getHours = timestamp => parseInt(moment(timestamp).format('HH'));
++        const getMinutes = timestamp => parseInt(moment(timestamp).format('mm'));
++
++        const currentHours = getHours(currentDate.getTime())
++        const currentMinutes = getMinutes(currentDate.getTime())
++        const currentValue = currentHours + currentMinutes;
++
++        const startHours = getHours(dndData?.startTime)
++        const startMinutes = getMinutes(dndData?.startTime)
++        const startValue = startHours + startMinutes;
++
++        const endHours = getHours(dndData?.endTime)
++        const endMinutes = getMinutes(dndData?.endTime)
++        const endValue = endHours + endMinutes;
++
++        const dndEnabled = (currentValue >= startValue && currentValue <= endValue);
++
++        if (dndEnabled) {
++          Alert.alert(Strings.failed, Strings.warn_user_is_on_dnd);
++          return;
++        }
++      } else if (metadate?.snoozData?.length > 0) {
++        snoozeData = JSON.parse(metadate?.snoozData)
++
++        const snoozeEnabled = (currentDate.getTime() > snoozeData?.startTimestamp)
++          && (currentDate.getTime() < snoozeData?.endTimestamp);
++
++        if (snoozeEnabled) {
++          Alert.alert(Strings.failed, Strings.warn_user_is_on_snooze);
++          return;
++        }
++      }
++    }
++    try {
++      const requestResult = await Permissions.requestMultiple(CALL_PERMISSIONS);
++      const isGranted = nativePermissionGranted(requestResult);
++      if (isGranted) {
++        const callProps = await SendbirdCalls.dial(userId, isVideoCall);
++        onNavigate(callProps);
++      } else {
++        Alert.alert(
++          Strings.Insufficient_permissions,
++          Strings.warn_allow_camera_and_microphone_access,
++          [
++            {
++              text: Strings.cancel,
++              style: 'cancel',
++              onPress: async () => {
++              },
++            },
++            {
++              text: Strings.okay,
++              onPress: async () => {
++                Linking.openSettings();
++              },
++            },
++          ],
++          { cancelable: false },
++        );
++      }
++    } catch (e) {
++      Alert.alert(Strings.failed, e.message);
++    }
++  };
++
+   return (
+     <HeaderComponent
+       clearTitleMargin
+       title={
+         <View style={styles.titleContainer}>
+-          <ChannelCover channel={channel} size={34} containerStyle={styles.avatarGroup} />
++          <ChannelCover
++            size={34}
++            isPreview={false}
++            channel={channel}
++            containerStyle={styles.avatarGroup}
++            onProfilePressed={onProfilePressed}
++          />
+           <View style={{ flexShrink: 1 }}>
+-            <Header.Title h2>{headerTitle}</Header.Title>
+-            {Boolean(subtitle) && subtitle && <Header.Subtitle style={styles.subtitle}>{subtitle}</Header.Subtitle>}
++            <TouchableOpacity onPress={() => {
++              getChannelWithCustomType(channel).customType != CONST_TYPES.ROOM_DIRECT ?
++                onPressHeaderRight('info')
++                :
++                navigation.navigate('ProfileView', {
++                  data: oneTooneMember[0],
++                  channelUrl: channel?.url,
++                  is_super: channel?.isSuper,
++                  channel: channel,
++                });
++            }}
++            >
++              <Header.Title h2>{headerTitle}</Header.Title>
++            </TouchableOpacity>
++            {Boolean(subtitle) && subtitle
++              ? <Header.Subtitle style={styles.subtitle(colors)}>{subtitle}</Header.Subtitle>
++              : lastSeenText.length > 0 ? (
++                <MarqueeText
++                  speed={1}
++                  loop={true}
++                  delay={3* 1000}
++                  marqueeOnStart={true}
++                  style={styles.subtitle(colors)}
++                  numberOfLines={1}>
++                  {lastSeenText}
++                </MarqueeText>
++              ) : null
++            }
+           </View>
+         </View>
+       }
+       left={<Icon icon={'arrow-left'} />}
+       onPressLeft={onPressHeaderLeft}
+-      right={<Icon icon={'info'} />}
++      right={
++        getChannelWithCustomType(channel).customType != CONST_TYPES.ROOM_DIRECT ?
++          <View style={{flexDirection: "row" }}>
++            <Pressable style={{marginRight:wp(2.5)}} onPress={()=>onPressHeaderRight('search')}>
++
++              <Icon icon={'search'} />
++            </Pressable>
++            <Pressable onPress={()=>onPressHeaderRight('info')} >
++
++              <Icon icon={'info'} />
++            </Pressable>
++          </View>
++          :
++          <View style={{ flexDirection: "row" }}>
++            <TouchableOpacity onPress={() => { onDial(oneTooneMember[0].userId, false) }} >
++              <Image source={images.call_btn} style={[styles.callOptionImg, {
++                marginRight: wp(2)
++              }]} />
++            </TouchableOpacity >
++            <TouchableOpacity onPress={() => { onDial(oneTooneMember[0].userId, true) }} >
++              <Image source={images.video_btn} style={styles.callOptionImg} />
++            </TouchableOpacity >
++          </View>
++      }
+       onPressRight={onPressHeaderRight}
+     />
+   );
+@@ -44,8 +354,14 @@ const styles = createStyleSheet({
+   avatarGroup: {
+     marginRight: 8,
+   },
+-  subtitle: {
++  subtitle: colors => ({
+     marginTop: 2,
++    color: colors.onBackground03,
++  }),
++  callOptionImg: {
++    resizeMode: 'contain',
++    height: wp(10),
++    width: wp(10),
+   },
+ });
+ 
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelInput/SendInput.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelInput/SendInput.tsx
+index d5cb01b..b7245f6 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelInput/SendInput.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelInput/SendInput.tsx
+@@ -1,5 +1,28 @@
+-import React from 'react';
+-import { Platform, TouchableOpacity, View } from 'react-native';
++import React, { useEffect, useState, useRef } from 'react';
++import {
++  Platform,
++  TouchableOpacity,
++  TouchableWithoutFeedback,
++  View,
++  FlatList,
++  Text,
++  NativeSyntheticEvent,
++  TextInputSelectionChangeEventData,
++  Pressable,
++  PanResponder,
++  Animated,
++  Easing,
++  Dimensions,
++  ScrollView,
++  Alert,
++} from "react-native";
++// @ts-ignore
++// import Animated, {
++//   withSpring,
++//   useSharedValue,
++//   useAnimatedStyle,
++//   useAnimatedGestureHandler,
++// } from 'react-native-reanimated';
+ 
+ import {
+   Icon,
+@@ -9,57 +32,322 @@ import {
+   useBottomSheet,
+   useToast,
+   useUIKitTheme,
++  Avatar,
+ } from '@sendbird/uikit-react-native-foundation';
+ import { conditionChaining } from '@sendbird/uikit-utils';
++import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
+ 
+-import { useLocalization, usePlatformService } from '../../../../hooks/useContext';
++import { useLocalization, usePlatformService, useSendbirdChat } from '../../../../hooks/useContext';
+ import SBUError from '../../../../libs/SBUError';
+ import SBUUtils from '../../../../libs/SBUUtils';
+ import type { GroupChannelProps } from '../../types';
++import { useGroupChannelMessages } from '@sendbird/uikit-chat-hooks';
++import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
++import { getrelamContactName } from '../../../../../../../../src/commonAction';
++import ParsedText from 'react-native-parsed-text';
++import { useEventEmitter } from '../../../../../../../../src/hooks/useEventEmitter';
++import ChannelCover from '../../../../components/ChannelCover';
++import Strings from '../../../../../../../../src/string_key/Strings';
++const MovingText = React.forwardRef((props, ref) => {
++  const [margin, setMargin] = useState(4);
++
++  React.useImperativeHandle(ref, () => ({
++    updateMargin: margin => setMargin(() => margin),
++  }), []);
++
++  return (
++    <Text style={{right: margin, color: 'black'}}>{'<'} {Strings.slide_to_cancel}</Text>
++  );
++})
++
++const AudioRecorderButton = props => {
++  const {onRecordingEvent, onPressed, animatedSize = 24, disabled} = props;
++  const { colors } = useUIKitTheme();
++  // const [isActive, setActive] = useState(false);
++
++  return (
++    <Pressable
++      style={{
++        height: 34,
++        width: 34,
++        alignItems: 'center',
++        justifyContent: 'center'
++      }}
++      onPressIn={() => {
++        // setActive(() => true);
++      
++        if (!disabled){
++          onRecordingEvent(true);
++        }
++      }}
++      onPressOut={() => {
++        // setActive(() => false);
++
++        if (!disabled){
++          onRecordingEvent(false);
++        }
++       
++      }}
++    >
++      <Icon
++        color={disabled ? colors.ui.input.default.disabled.highlight 
++          :
++          colors.ui.input.default.active.highlight }
++        // @ts-ignore
++        icon={'microphone'}
++        // size={isActive ? 36 : 24}
++        size={animatedSize}
++        containerStyle={styles.iconAttach}
++      />
++    </Pressable>
++  )
++}
+ 
+ type SendInputProps = GroupChannelProps['Input'] & {
+   text: string;
+   setText: (val: string) => void;
+   disabled: boolean;
+ };
+-const SendInput = ({ onSendUserMessage, onSendFileMessage, text, setText, disabled }: SendInputProps) => {
++const SendInput = ({ onSendUserMessage, onSendFileMessage, onRecordingEvent, text, setText, disabled, channel, onCameraPressed, onEmojiPressed }: SendInputProps) => {
+   const { STRINGS } = useLocalization();
+   const { fileService } = usePlatformService();
++
++  let inputRef1 = useRef();
++  let inputRef2 = useRef();
++
+   const { colors } = useUIKitTheme();
+   const { openSheet } = useBottomSheet();
+   const { alert } = useAlert();
+   const toast = useToast();
++  const { sdk, currentUser } = useSendbirdChat();
++  const { activeChannel, sendUserMessage } = useGroupChannelMessages(sdk, channel, currentUser?.userId);
+ 
+-  const onPressSend = () => {
+-    onSendUserMessage(text).catch(() => toast.show(STRINGS.TOAST.SEND_MSG_ERROR, 'error'));
+-    setText('');
++  const [isShow, setIsShow] = useState(false)
++  const [viewHeight, setViewHeight] = useState(0)
++  const [viewWidth, setViewWidth] = useState(0)
++
++  const [activeMemberInfo, setActiveMemberInfo] = useState([{ isFirst: true, metaData: { phone: (activeChannel?.isSuper == false) ? 'Group' : 'Channel' } }, ...activeChannel?.members])
++  const [arrMentionUserInfo, setarrMentionUserInfo] = useState([])
++  const [memberName, setMemberName] = useState('')
++  const [mentionedUserCount, setMentionedUserCount] = useState(0)
++  const userNameRegEx = new RegExp(/@([\w\d.\-_]+)?/g);
++  const [editorHeight, setEditorHeight] = useState(0)
++  const [originalText, setOriginalText] = useState('');
++
++  const [isRecording, setRecording] = useState(false);
++  const [count, setCount] = useState('00:00');
++
++  const refRecordingLimitReached = useRef (false);
++  const refLastFadeValue = useRef (1);
++  const refText = useRef (null);
++  const fadeAnim = useRef(new Animated.Value(1)).current;
++  const refAnimatedSize = useRef (new Animated.Value(0));
++  const refIsRecording = useRef (false);
++  const refStartedDragging = useRef (false);
++  const pan = useRef(new Animated.ValueXY()).current;
++  const panResponder = useRef(
++    PanResponder.create({
++      onStartShouldSetPanResponder: () => true,
++      onMoveShouldSetPanResponder: () => true,
++      onPanResponderGrant: () => {
++        refStartedDragging.current = true;
++        pan.setOffset({
++          x: pan.x._value,
++          y: pan.y._value
++        });
++      },
++      onPanResponderMove: (...args) => {
++        if (Math.abs(args[1].dx) > Dimensions.get('window').width / 2.6) {
++          if (refIsRecording.current) {
++            refIsRecording.current = false;
++            refRecordingLimitReached.current = false;
++            refText?.current?.updateMargin(4);
++            setRecording(() => false);
++
++            onRecordingEvent(0);
++            console.log('Cancel/Delete recording!');
++            Animated.timing(refAnimatedSize.current, {
++              toValue: 0,
++              duration: 200,
++              easing: Easing.linear,
++              useNativeDriver: false
++            }).start()
++
++            Animated.spring(
++              pan, // Auto-multiplexed
++              { toValue: { x: 0, y: 0 }, useNativeDriver: false } // Back to zero
++            ).start();
++          }
++        } else {
++          if (args[1].dx < 0) {
++            pan.x.setValue(args[1].dx);
++            refText?.current?.updateMargin(Math.abs(args[1].dx) + 4);
++          } else {
++            // No need to move right...
++          }
++        }
++      },
++      onPanResponderRelease: () => {
++        pan.flattenOffset();
++        refStartedDragging.current = false;
++        if (refIsRecording.current) {
++          endRecording();
++
++          Animated.timing(refAnimatedSize.current, {
++            toValue: 0,
++            duration: 200,
++            easing: Easing.linear,
++            useNativeDriver: false
++          }).start()
++
++          Animated.spring(
++            pan, // Auto-multiplexed
++            { toValue: { x: 0, y: 0 }, useNativeDriver: false } // Back to zero
++          ).start();
++        }
++      }
++    })
++  ).current;
++
++  const fadeUpdate = (toValue) => {
++    Animated.timing(fadeAnim, {
++      toValue: toValue,
++      duration: toValue === 1 ? 800 : 1000,
++      useNativeDriver: false,
++    }).start(() => {
++      if (refIsRecording.current) {
++        fadeUpdate(toValue === 1 ? 0 : 1);
++      }
++    });
++  }
++
++  React.useEffect(() => {
++    if (refIsRecording.current) {
++      fadeUpdate(0)
++    }
++  }, [isRecording]);
++
++  const onPressSend = async () => {
++    try {
++      if (arrMentionUserInfo.length > 0) {
++        const params = new sdk.UserMessageParams();
++        let resolveParam: any;
++        let sendMessage: any;
++        let userIDs: any;
++        let mobilenos: any;
++        resolveParam = new Promise((resolve, reject) => {
++          sendMessage = (originalTextForSend() + '').replace(/,/g, '');
++          userIDs = arrMentionUserInfo.map(v => v.userId)
++          mobilenos = arrMentionUserInfo.map(v => v.metaData?.phone).toString()
++          resolve()
++        });
++        resolveParam.then(async () => {
++          params.message = sendMessage;
++          params.data = mobilenos;
++          params.mentionedUserIds = userIDs;
++          params.mentionType = arrMentionUserInfo.filter((item) => (item.isFirst == true)).length > 0 ? 'channel' : 'users';
++          setText('');
++          setMentionedUserCount(0)
++          setOriginalText('');
++          setarrMentionUserInfo([])
++          await sendUserMessage(params);
++        })
++      } else {
++        const params = new sdk.UserMessageParams();
++        params.message = text;
++        setText('');
++        setOriginalText('');
++        await sendUserMessage(params);
++      }
++    } catch (error) {
++      if (error.code == 900080) {
++        alert('Receiver is blocked. \n Unblocked the user to send message')
++      } else {
++        toast.show(STRINGS.TOAST.SEND_MSG_ERROR, 'error')
++      }
++      //if(error)
++
++    }
+   };
++
++  const originalTextForSend = () => {
++    return text.split(' ').map((text) => {
++      if (text.includes('@')) {
++        return '@' + getNumberFromName(text.slice(1)) + '  '
++      }
++      return `${text} `;
++    })
++  }
++
++  const getNumberFromName = (name: any) => {
++    return activeMemberInfo.filter((item) => getrelamContactName(item.metaData?.phone).replace(/ /g, '') == name).map(({ metaData }) => (metaData.phone))[0]
++  }
++
++  const onPressCamera = async () => {
++
++    onCameraPressed();
++    return;
++
++    let photo = undefined;
++    const result = await launchCamera({
++      mediaType: 'photo',
++      maxHeight: 1080,
++      maxWidth: 1080,
++      quality: 1,
++    });
++
++    if (result.errorCode === 'permission') {
++      alert({
++        title: STRINGS.DIALOG.ALERT_PERMISSIONS_TITLE,
++        message: STRINGS.DIALOG.ALERT_PERMISSIONS_MESSAGE('camera', 'UIKitSample'),
++        buttons: [{ text: STRINGS.DIALOG.ALERT_PERMISSIONS_OK, onPress: () => SBUUtils.openSettings() }],
++      });
++    } else if (result.errorCode === 'camera_unavailable' || result.errorCode === 'others') {
++      toast.show(STRINGS.TOAST.OPEN_CAMERA_ERROR, 'error');
++    } else if (result.didCancel) {
++      // Cancel
++    } else {
++      const {fileName, uri, width, height, fileSize, type} = result.assets[0];
++
++      photo = {
++        name: fileName,
++        size: fileSize,
++        type: type,
++        uri: uri,
++      };
++    }
++
++    // TODO: Removed due to causing image to rotate while saving on iOS devices...
++    // const photo = await fileService.openCamera({
++    //   mediaType: 'all',
++    //   onOpenFailure: (error) => {
++    //     if (error.code === SBUError.CODE.ERR_PERMISSIONS_DENIED) {
++    //       alert({
++    //         title: STRINGS.DIALOG.ALERT_PERMISSIONS_TITLE,
++    //         message: STRINGS.DIALOG.ALERT_PERMISSIONS_MESSAGE('camera', 'UIKitSample'),
++    //         buttons: [{ text: STRINGS.DIALOG.ALERT_PERMISSIONS_OK, onPress: () => SBUUtils.openSettings() }],
++    //       });
++    //     } else {
++    //       toast.show(STRINGS.TOAST.OPEN_CAMERA_ERROR, 'error');
++    //     }
++    //   },
++    // });
++
++    console.log('photo ==> ', photo);
++
++    if (photo) {
++      onSendFileMessage(photo).catch(() => toast.show(STRINGS.TOAST.SEND_MSG_ERROR, 'error'));
++    }
++  }
++
+   const onPressAttachment = () => {
+     openSheet({
+       sheetItems: [
+         {
+           title: STRINGS.GROUP_CHANNEL.DIALOG_ATTACHMENT_CAMERA,
+           icon: 'camera',
+-          onPress: async () => {
+-            const photo = await fileService.openCamera({
+-              mediaType: 'all',
+-              onOpenFailure: (error) => {
+-                if (error.code === SBUError.CODE.ERR_PERMISSIONS_DENIED) {
+-                  alert({
+-                    title: STRINGS.DIALOG.ALERT_PERMISSIONS_TITLE,
+-                    message: STRINGS.DIALOG.ALERT_PERMISSIONS_MESSAGE('camera', 'UIKitSample'),
+-                    buttons: [{ text: STRINGS.DIALOG.ALERT_PERMISSIONS_OK, onPress: () => SBUUtils.openSettings() }],
+-                  });
+-                } else {
+-                  toast.show(STRINGS.TOAST.OPEN_CAMERA_ERROR, 'error');
+-                }
+-              },
+-            });
+-
+-            if (photo) {
+-              onSendFileMessage(photo).catch(() => toast.show(STRINGS.TOAST.SEND_MSG_ERROR, 'error'));
+-            }
+-          },
++          // @ts-ignore
++          onPress: () => onPressCamera(),
+         },
+         {
+           title: STRINGS.GROUP_CHANNEL.DIALOG_ATTACHMENT_PHOTO_LIBRARY,
+@@ -99,41 +387,386 @@ const SendInput = ({ onSendUserMessage, onSendFileMessage, text, setText, disabl
+             }
+           },
+         },
++        {
++          title: 'Cancel',
++          titleColor: '#6c2dcd',
++          // onPress: () => console.log('Cancel pressed!'),
++        },
+       ],
+     });
+   };
+ 
++  const _onChangeText = (value: any) => {
++    let vardata = new Promise((resolve, reject) => {
++      setText(value)
++      resolve()
++    });
++    vardata.then(() => {
++      const lastChar = text.substr(text.length - 1)
++      const currentChar = value.substr(value.length - 1)
++      const spaceCheck = /[^@A-Za-z_]/g
++      if (value.length === 0) {
++        setIsShow(false)
++      } else {
++
++        if (activeChannel.customType !==  'DIRECT'){
++
++          const pattern = new RegExp(`\\B@[a-z0-9_-]+|\\B@`, `gi`);
++          const matches = value.match(pattern) || []
++  
++          if (lastChar == '@') {
++            setMentionedUserCount(mentionedUserCount - 1)
++          } else if (matches.length == 0) {
++            setMentionedUserCount(0)
++          }
++          if (spaceCheck.test(lastChar) && currentChar != '@') {
++            setIsShow(false)
++          } else {
++            const checkSpecialChar = currentChar.match(/[^@A-Za-z_]/)
++            if (checkSpecialChar === null || currentChar === '@') {
++              if (matches.length > 0 && matches.length > mentionedUserCount) {
++                getSuggestions(matches[matches.length - 1])
++
++                setIsShow(true)
++              } else {
++                setIsShow(false)
++              }
++            } else if (checkSpecialChar != null) {
++              setIsShow(false)
++            }
++          }
++
++
++        }
++
++
++
++      }
++    });
++  }
++
++  const getSuggestions = (keyword: any) => {
++    if (Array.isArray(activeMemberInfo)) {
++      if (keyword.slice(1) === '') {
++        setActiveMemberInfo([{ isFirst: true, metaData: { phone: (activeChannel?.isSuper == false) ? 'Group' : 'Channel' } }, ...activeChannel.members]);
++        setMemberName(keyword)
++      } else {
++        const userDataList = activeChannel.members.filter(obj => getrelamContactName(obj.metaData?.phone).indexOf(keyword.slice(1)) !== -1)
++        setActiveMemberInfo([...userDataList]);
++        setMemberName(keyword)
++      }
++    }
++
++  }
++
++  const onSeletedItem = (item: any) => {
++    setIsShow(false)
++    const sliceText = text.slice(0, - memberName.length)
++    setarrMentionUserInfo([...arrMentionUserInfo, item]);
++    setMentionedUserCount(mentionedUserCount + 1)
++    setText(sliceText + '@' + getrelamContactName(item.metaData?.phone).replace(/ /g, '') + ' ')
++  }
++
++  // const Item = ({ item }) => (
++  //   <>
++  //     {item.isFirst ?
++  //       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => { onSeletedItem(item) }}>
++  //         <Avatar size={28} containerStyle={{ alignSelf: 'center', marginRight: 8 }} uri={item.profileUrl} />
++  //         <Text style={styles.title}>{item.metaData?.phone}</Text>
++  //       </TouchableOpacity>
++  //       :
++  //       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => { onSeletedItem(item) }}>
++  //         <Avatar size={28} containerStyle={{ alignSelf: 'center', marginRight: 8 }} uri={item.profileUrl} />
++  //         <Text style={styles.title}>{getrelamContactName(item.metaData?.phone)}</Text>
++  //       </TouchableOpacity>
++  //     }
++  //   </>
++  // );
++
++  const Item = ({ item }) => (
++    <>
++      {item.isFirst ?
++        <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => { onSeletedItem(item) }}>
++          <ChannelCover
++            size={28}
++            isPreview={false}
++            channel={channel}
++            containerStyle={{ alignSelf: 'center', marginRight: 8 }}
++          />
++          <Text style={styles.title}>{item.metaData?.phone}</Text>
++        </TouchableOpacity>
++        :
++        <TouchableWithoutFeedback onPress={() => { onSeletedItem(item) }}>
++          <View style={styles.item}>
++            <Avatar size={28} containerStyle={{ alignSelf: 'center', marginRight: 8 }} uri={item.profileUrl} />
++            <Text style={styles.title}>{getrelamContactName(item.metaData?.phone)}</Text>
++          </View>
++        </TouchableWithoutFeedback>
++      }
++    </>
++  );
++
++  const renderItem = ({ item }) => (
++    <Item item={item} />
++  );
++
++  const handleSelectionChange = e => {
++    //setSelection(event.nativeEvent.selection);
++    // console.log('onSelectionChange', e.nativeEvent.selection);
++    // onSelectionChange && onSelectionChange(event);
++  };
++
++  const onContentSizeChange = evt => {
++    /**
++     * this function will dynamically
++     * calculate editor height w.r.t
++     * the size of text in the input.
++     */
++    if (evt) {
++      const height = evt.nativeEvent.contentSize.height
++      // Platform.OS === "ios"
++      //   ? evt.nativeEvent.contentSize.height
++      //   : evt.nativeEvent.contentSize.height - androidTextHeight;
++      // let editorHeight = 40;
++      //editorHeight = editorHeight + height;
++      setEditorHeight(height)
++    }
++  };
++
++  useEventEmitter('on-count-update', data => {
++    const {count, limitReached} = data;
++    refRecordingLimitReached.current = limitReached;
++    setCount(() => count);
++  });
++
++  useEventEmitter('pop-open-keyboard', data => {
++    if (inputRef2 === undefined || inputRef2 === null) {
++      return;
++    }
++    const {open} = data;
++    if (open) {
++
++      inputRef2?.current?.focus();
++    }
++  });
++
++  function endRecording() {
++    console.log('end recording!');
++    refIsRecording.current = false;
++    setRecording(() => false);
++    if (refRecordingLimitReached.current) {
++      refRecordingLimitReached.current = false;
++      onRecordingEvent(1);
++    } else {
++      onRecordingEvent(0);
++      Alert.alert('Limit Not Reached', 'Voice note must be at least 2 seconds.');
++    }
++  }
++
++  const iconEnableDisable = () =>  {
++    return disabled ? colors.ui.input.default.disabled.highlight : colors.ui.input.default.active.highlight}
++
+   return (
+-    <View style={styles.sendInputContainer}>
+-      <TouchableOpacity onPress={onPressAttachment} disabled={disabled}>
+-        <Icon
+-          color={disabled ? colors.ui.input.default.disabled.highlight : colors.ui.input.default.active.highlight}
+-          icon={'add'}
+-          size={24}
+-          containerStyle={styles.iconAttach}
+-        />
+-      </TouchableOpacity>
+-      <TextInput
+-        multiline
+-        editable={!disabled}
+-        value={text}
+-        onChangeText={setText}
+-        style={styles.input}
+-        placeholder={conditionChaining(
+-          [disabled],
+-          [STRINGS.GROUP_CHANNEL.INPUT_PLACEHOLDER_DISABLED, STRINGS.GROUP_CHANNEL.INPUT_PLACEHOLDER_ACTIVE],
+-        )}
+-      />
+-      {Boolean(text.trim()) && (
+-        <TouchableOpacity onPress={onPressSend} disabled={disabled}>
++    <View>
++      {
++        isShow &&
++        // <View style={{ ...styles.bottomWrapper, bottom: viewHeight ?? 0, width: viewWidth ?? wp(95), height: wp('50%') }}>
++        <View style={{
++          ...styles.bottomWrapper,
++          // width: viewWidth ?? wp(100),
++          width: wp(95),
++          height: activeMemberInfo?.length > 3 ? wp('50%') : undefined
++        }}>
++          <ScrollView showsVerticalScrollIndicator={false}>
++            {activeMemberInfo.map((data, index) => <Item key={data.id} item={data} />)}
++          </ScrollView>
++        </View>
++      }
++      <View style={styles.sendInputContainer}
++            onLayout={(event: any) => { var { height } = event.nativeEvent.layout; setViewHeight(height) }} >
++        <TouchableOpacity onPress={onPressAttachment} disabled={disabled}>
+           <Icon
+             color={disabled ? colors.ui.input.default.disabled.highlight : colors.ui.input.default.active.highlight}
+-            icon={'send'}
+-            size={24}
+-            containerStyle={styles.iconSend}
++            icon={'add'}
++            size={wp('7%')}
++            containerStyle={styles.iconAttach}
+           />
+         </TouchableOpacity>
+-      )}
++
++        <View style={{
++          flex: 1,
++          marginRight: 4,
++          minHeight: 36,
++          maxHeight: 36 * Platform.select({ ios: 2.5, default: 2 }),
++          borderRadius: 20,
++          overflow: 'hidden',
++          flexDirection: 'row',
++          backgroundColor: '#d7e2f0',
++          alignItems: 'center',
++        }}>
++          <TextInput
++            multiline
++            ref={inputRef2}
++            editable={!disabled}
++            onChangeText={(val: any) => { _onChangeText(val) }}
++            style={{
++              flex: 1,
++              fontSize: wp('3.3%'),
++              backgroundColor: '#d7e2f0',
++            }}
++            onSelectionChange={handleSelectionChange}
++            placeholder={conditionChaining(
++              [disabled],
++              [STRINGS.GROUP_CHANNEL.INPUT_PLACEHOLDER_DISABLED, STRINGS.GROUP_CHANNEL.INPUT_PLACEHOLDER_ACTIVE],
++            )}
++            onLayout={(event: any) => { var { width } = event.nativeEvent.layout; setViewWidth(width) }}
++            onContentSizeChange={onContentSizeChange}
++          >
++             {/* add the login for direct */}
++            {activeChannel.customType !==  'DIRECT' &&  <ParsedText
++            style={styles.text}
++
++              parse={
++                [
++                  { type: 'phone', style: { color: '#3F9AFF' } },
++                  { pattern: userNameRegEx, style: { color: '#3F9AFF' } },
++                ]
++              }
++              childrenProps={{ allowFontScaling: false }}
++            >
++              {text}
++            </ParsedText>}
++
++            {activeChannel.customType ===  'DIRECT' &&  <ParsedText
++            style={styles.text}
++
++              parse={
++                [
++                  { type: 'phone', style: { color: 'clear' } },
++                  { pattern: userNameRegEx, style: { color: 'clear' } },
++                ]
++              }
++              childrenProps={{ allowFontScaling: false }}
++            >
++              {text}
++            </ParsedText>}
++           
++          </TextInput>
++
++       
++          <Pressable onPress={ disabled ? null : onEmojiPressed}>
++            <Icon
++              size={20}
++              // @ts-ignore
++              icon={'smile_emoji'}
++              containerStyle={styles.iconAttach}
++             // color={disabled ? colors.ui.input.default.disabled.highlight : colors.ui.input.default.active.highlight}
++             color = {iconEnableDisable()}
++            />
++          </Pressable>
++        </View>
++
++        {isRecording && (
++          <View style={{...styles.dummyViewStyle, ...{width: text.length > 0 ? '90%' : '100%'}}}>
++            <View style={{flexDirection: 'row', paddingTop: hp('0.8%')}}>
++              <Animated.View
++                style={{
++                  opacity:fadeAnim,
++                  marginStart: wp('2%'),
++                }}>
++                <Icon
++                  size={20}
++                  color={'red'}
++                  //@ts-ignore
++                  icon={'microphone'}
++                />
++              </Animated.View>
++              <Text style={{
++                marginStart: wp('1%'),
++                color: refRecordingLimitReached.current ? 'black' : 'red',
++              }}>{count}</Text>
++            </View>
++            <MovingText ref={refText} />
++          </View>
++        )}
++
++        {!isRecording && (
++          <Pressable onPress={ disabled ? null : () => onPressCamera()}>
++            <Icon
++              size={20}
++              // @ts-ignore
++              icon={'ic_camera'}
++              containerStyle={styles.iconAttach}
++             // color={colors.ui.input.default.active.highlight}
++             color = {iconEnableDisable()}
++            />
++          </Pressable>
++        )}
++
++        <Animated.View
++          style={{
++            transform: [
++              { translateX: pan.x },
++              {
++                scaleX: refAnimatedSize.current.interpolate({
++                  inputRange: [0, 1],
++                  outputRange: [1, 1.4]
++                })
++              },
++              {
++                scaleY: refAnimatedSize.current.interpolate({
++                  inputRange: [0, 1],
++                  outputRange: [1, 1.4]
++                })
++              }
++            ],
++            alignItems: 'center',
++            justifyContent: 'center',
++          }}
++          {...panResponder.panHandlers}
++        >
++          <AudioRecorderButton
++          disabled ={disabled}
++            onRecordingEvent={isRecording => {
++              if (isRecording) {
++                console.log('Start recording!');
++                onRecordingEvent(2);
++                setRecording(() => true);
++                refIsRecording.current = true;
++                Animated.timing(refAnimatedSize.current, {
++                  toValue: 1,
++                  duration: 150,
++                  easing: Easing.linear,
++                  useNativeDriver: false
++                }).start()
++              } else {
++                if (refIsRecording.current && !refStartedDragging.current) {
++                  endRecording();
++
++                  Animated.timing(refAnimatedSize.current, {
++                    toValue: 0,
++                    duration: 150,
++                    easing: Easing.linear,
++                    useNativeDriver: false
++                  }).start()
++                }
++              }
++            }}
++            animatedSize={22}
++          />
++        </Animated.View>
++
++        {Boolean(text.trim()) && (
++          <TouchableOpacity onPress={onPressSend} disabled={disabled}>
++            <Icon
++              color={disabled ? colors.ui.input.default.disabled.highlight : colors.ui.input.default.active.highlight}
++              icon={'send'}
++              size={24}
++              containerStyle={styles.iconSend}
++            />
++          </TouchableOpacity>
++        )}
++      </View>
+     </View>
+   );
+ };
+@@ -145,21 +778,57 @@ const styles = createStyleSheet({
+     alignItems: 'center',
+     flexDirection: 'row',
+   },
++  dummyViewStyle: {
++    left: 1,
++    bottom: 1,
++    position: 'absolute',
++    flexDirection: 'row',
++    alignItems: 'center',
++    backgroundColor: 'white',
++    width: wp('85%'),
++    justifyContent: 'space-between',
++    paddingTop: Platform.OS === 'android' ? wp('4%') : wp('1%'),
++    paddingEnd: Platform.OS === 'android' ? wp('9%') : wp('7%'),
++    minHeight: 36 * Platform.select({ ios: 1.5, default: 2 }),
++    maxHeight: 36 * Platform.select({ ios: 2.5, default: 2 }),
++  },
+   input: {
+     flex: 1,
+     marginRight: 4,
+     minHeight: 36,
+     maxHeight: 36 * Platform.select({ ios: 2.5, default: 2 }),
+     borderRadius: 20,
++    fontSize: wp('3.3%'),
++    backgroundColor: '#d7e2f0',
+   },
+   iconAttach: {
+-    marginRight: 8,
++    marginRight: 4,
+     padding: 4,
+   },
+   iconSend: {
+     marginLeft: 4,
+     padding: 4,
+   },
++  item: {
++    padding: 8,
++    marginVertical: 4,
++    marginHorizontal: 8,
++    flexDirection: 'row',
++  },
++  title: {
++    fontSize: wp(3),
++    alignSelf: 'center',
++    color: 'black',
++  },
++  bottomWrapper: {
++    borderRadius: wp(2),
++    alignSelf: 'center',
++    backgroundColor: '#FFF',
++    borderColor: '#E8F1FB',
++    borderWidth: 1,
++    zIndex: 99,
++    // position: 'absolute',
++  }
+ });
+ 
+ export default SendInput;
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelInput/index.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelInput/index.tsx
+index 586960a..9497983 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelInput/index.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelInput/index.tsx
+@@ -1,5 +1,6 @@
++// @ts-ignore
+ import React, { useContext, useEffect, useRef, useState } from 'react';
+-import { KeyboardAvoidingView, Platform, View } from 'react-native';
++import { KeyboardAvoidingView, Platform, Pressable, View, Text } from "react-native";
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
+ 
+ import { useUIKitTheme } from '@sendbird/uikit-react-native-foundation';
+@@ -12,7 +13,7 @@ import SendInput from './SendInput';
+ 
+ const KEYBOARD_AVOID_VIEW_BEHAVIOR = Platform.select({ ios: 'padding' as const, default: undefined });
+ const GroupChannelInput = (props: GroupChannelProps['Input']) => {
+-  const { channel } = props;
++  const { channel, emojiView } = props;
+ 
+   const { left, right, bottom } = useSafeAreaInsets();
+   const { colors } = useUIKitTheme();
+@@ -60,6 +61,16 @@ const GroupChannelInput = (props: GroupChannelProps['Input']) => {
+             />
+           )}
+         </View>
++        {emojiView(
++          emoji => setText(prevState => prevState + emoji.code),
++          () => setText(prevState => {
++            if (prevState.length <= 2) {
++              return prevState.slice(0, -2);
++            }
++
++            return prevState.slice(0, -1);
++          }),
++        )}
+         <SafeAreaBottom height={bottom} />
+       </View>
+     </KeyboardAvoidingView>
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelMessageList.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelMessageList.tsx
+index 3bf8fcc..2a1c098 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelMessageList.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/component/GroupChannelMessageList.tsx
+@@ -1,6 +1,7 @@
+ import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+ import { Linking, ListRenderItem, Platform, View } from 'react-native';
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
++import { useEventEmitter } from '../../../../../../../src/hooks/useEventEmitter';
+ 
+ import type { BottomSheetItem } from '@sendbird/uikit-react-native-foundation';
+ import {
+@@ -29,6 +30,7 @@ import { DEPRECATION_WARNING } from '../../../constants';
+ import { useLocalization, usePlatformService } from '../../../hooks/useContext';
+ import { GroupChannelContexts } from '../module/moduleContext';
+ import type { GroupChannelProps } from '../types';
++import Strings from '../../../../../../../src/string_key/Strings';
+ 
+ const HANDLE_NEXT_MSG_SEPARATELY = Platform.select({ default: true });
+ 
+@@ -45,6 +47,10 @@ const GroupChannelMessageList = ({
+   renderScrollToBottomButton,
+   onResendFailedMessage,
+   onDeleteMessage,
++  onUploadFileProgress,
++  onReplyMessage,
++  onReadByPressed,
++  onDeliveredToPressed,
+   onPressImageMessage,
+   onPressMediaMessage,
+   flatListProps,
+@@ -58,6 +64,10 @@ const GroupChannelMessageList = ({
+   const [newMessagesInternalBuffer, setNewMessagesInternalBuffer] = useState(() => newMessagesFromMembers);
+   const getMessagePressActions = useGetMessagePressActions({
+     onDeleteMessage,
++    onReplyMessage,
++    onUploadFileProgress,
++    onReadByPressed,
++    onDeliveredToPressed,
+     onPressImageMessage,
+     onPressMediaMessage,
+     currentUserId,
+@@ -66,6 +76,19 @@ const GroupChannelMessageList = ({
+ 
+   const safeAreaLayout = { paddingLeft: left, paddingRight: right };
+ 
++  useEventEmitter('scroll_chat_index', data => {
++    if(messages?.length){
++      if ((scrollRef !== null) && (scrollRef?.current !== null)) {
++        if (typeof scrollRef?.current?.scrollToIndex === "function") {
++          try { scrollRef?.current?.scrollToIndex(messages?.findIndex((item)=>item?.messageId==data?.messageId));
++          } catch (error) {
++            console.warn("Something went wrong", error);
++          }
++        }}
++    }
++
++  });
++
+   const renderItem: ListRenderItem<SendbirdMessage> = useFreshCallback(({ item, index }) => {
+     const { onPress, onLongPress } = getMessagePressActions(item);
+     return renderMessage({
+@@ -97,7 +120,7 @@ const GroupChannelMessageList = ({
+   return (
+     <View style={[{ flex: 1, backgroundColor: colors.background }, safeAreaLayout]}>
+       {channel.isFrozen && (
+-        <ChannelFrozenBanner style={styles.frozenBanner} text={STRINGS.GROUP_CHANNEL.LIST_BANNER_FROZEN} />
++        <ChannelFrozenBanner text={Strings.channel_is_frozen} style={styles.frozenBanner} />
+       )}
+       <ChatFlatList
+         nextMessages={nextMessages}
+@@ -143,6 +166,10 @@ const useGetMessagePressActions = ({
+   onPressImageMessage,
+   onPressMediaMessage,
+   onDeleteMessage,
++  onReplyMessage,
++  onUploadFileProgress,
++  onReadByPressed,
++  onDeliveredToPressed,
+   onResendFailedMessage,
+   currentUserId,
+ }: Pick<
+@@ -161,12 +188,12 @@ const useGetMessagePressActions = ({
+     openSheet({
+       sheetItems: [
+         {
+-          title: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_FAILED_RETRY,
++          title: Strings.retry,
+           onPress: () =>
+             onResendFailedMessage(message).catch(() => toast.show(STRINGS.TOAST.RESEND_MSG_ERROR, 'error')),
+         },
+         {
+-          title: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_FAILED_REMOVE,
++          title: Strings.remove,
+           titleColor: colors.ui.dialog.default.none.destructive,
+           onPress: () => confirmDelete(message),
+         },
+@@ -175,15 +202,15 @@ const useGetMessagePressActions = ({
+   };
+   const confirmDelete = (message: HandleableMessage) => {
+     alert({
+-      title: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_DELETE_CONFIRM_TITLE,
++      title: Strings.delete_message,
+       buttons: [
+         {
+-          text: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_DELETE_CONFIRM_CANCEL,
++          text: Strings.cancel,
+         },
+         {
+-          text: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_DELETE_CONFIRM_OK,
++          text: Strings.delete,
+           style: 'destructive',
+-          onPress: () => onDeleteMessage(message).catch(() => toast.show(STRINGS.TOAST.DELETE_MSG_ERROR, 'error')),
++          onPress: () => onDeleteMessage(message).catch(() => toast.show(Strings.error_delete_message, 'error')),
+         },
+       ],
+     });
+@@ -201,57 +228,89 @@ const useGetMessagePressActions = ({
+     };
+ 
+     if (msg.isUserMessage()) {
+-      sheetItems.push({
+-        icon: 'copy',
+-        title: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_COPY,
+-        onPress: () => {
+-          clipboardService.setString(msg.message || '');
+-          toast.show(STRINGS.TOAST.COPY_OK, 'success');
++      sheetItems.push(
++        // {
++        //   type: 'reactions',
++        // },
++        {
++          icon: 'copy',
++          title: Strings.copy,
++          onPress: () => {
++            clipboardService.setString(msg.message || '');
++            toast.show(Strings.copied, 'success');
++          },
+         },
+-      });
++      );
+ 
+       if (isMyMessage(msg, currentUserId) && msg.sendingStatus === 'succeeded') {
+         sheetItems.push(
+           {
+             icon: 'edit',
+-            title: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_EDIT,
++            title: Strings.edit,
+             onPress: () => setEditMessage(msg),
+           },
+           {
+             icon: 'delete',
+-            title: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_DELETE,
++            title: Strings.delete,
+             onPress: () => confirmDelete(msg),
+           },
++          // {
++          //   icon: 'reply',
++          //   title: 'Reply',
++          //   onPress: () => onReplyMessage(msg, toast),
++          // },
++          {
++            icon: 'done-all',
++            title: Strings.read_by,
++            onPress: () => onReadByPressed(msg, toast),
++          },
++          {
++            icon: 'done-all',
++            iconColor: 'rgba(0,0,0,0.15)',
++            title: Strings.delivered_to,
++            onPress: () => onDeliveredToPressed(msg, toast),
++          },
+         );
+       }
+     }
+ 
+     if (msg.isFileMessage()) {
+-      sheetItems.push({
+-        icon: 'download',
+-        title: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_SAVE,
+-        onPress: async () => {
+-          if (toMegabyte(msg.size) > 4) {
+-            toast.show(STRINGS.TOAST.DOWNLOAD_START, 'success');
+-          }
+-
+-          fileService
+-            .save({ fileUrl: msg.url, fileName: msg.name, fileType: msg.type })
+-            .then((response) => {
+-              toast.show(STRINGS.TOAST.DOWNLOAD_OK, 'success');
+-              Logger.log('File saved to', response);
+-            })
+-            .catch((err) => {
+-              toast.show(STRINGS.TOAST.DOWNLOAD_ERROR, 'error');
+-              Logger.log('File save failure', err);
+-            });
++      sheetItems.push(
++        {
++          icon: 'download',
++          title: Strings.save,
++          onPress: async () => {
++            if (toMegabyte(msg.size) > 4) {
++              toast.show(Strings.downloading, 'success');
++            }
++            const fileName = msg.url.toLowerCase().includes('mp4') ? new Date().getTime() + '.mp4' : msg.name;
++            const params = { fileUrl: msg.url, fileName: fileName, fileType: msg.type };
++            onUploadFileProgress(true);
++            fileService
++              .save(params)
++              .then((response) => {
++                onUploadFileProgress(false);
++                toast.show(Strings.file_saved, 'success');
++                Logger.log('File saved to', response);
++              })
++              .catch((err) => {
++                onUploadFileProgress(false);
++                toast.show(Strings.error_download_file, 'error');
++                Logger.log('File save failure', err);
++              });
++          },
+         },
+-      });
++        // {
++        //   icon: 'reply',
++        //   title: 'Reply',
++        //   onPress: () => onReplyMessage(msg, toast),
++        // },
++      );
+ 
+       if (isMyMessage(msg, currentUserId) && msg.sendingStatus === 'succeeded') {
+         sheetItems.push({
+           icon: 'delete',
+-          title: STRINGS.GROUP_CHANNEL.DIALOG_MESSAGE_DELETE,
++          title: Strings.delete,
+           onPress: () => confirmDelete(msg),
+         });
+       }
+@@ -284,7 +343,7 @@ const useGetMessagePressActions = ({
+     if (msg.sendingStatus === 'failed') {
+       response.onLongPress = () => handleFailedMessage(msg);
+       response.onPress = () => {
+-        onResendFailedMessage(msg).catch(() => toast.show(STRINGS.TOAST.RESEND_MSG_ERROR, 'error'));
++        onResendFailedMessage(msg).catch(() => toast.show(Strings.error_sending_message, 'error'));
+       };
+     }
+ 
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/module/moduleContext.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/module/moduleContext.tsx
+index cd7117c..da6f9fd 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/module/moduleContext.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/module/moduleContext.tsx
+@@ -1,5 +1,6 @@
++// @ts-ignore
+ import React, { createContext, useState } from 'react';
+-
++import { Platform } from "react-native";
+ import { useChannelHandler } from '@sendbird/uikit-chat-hooks';
+ import {
+   NOOP,
+@@ -14,6 +15,7 @@ import {
+ import ProviderLayout from '../../../components/ProviderLayout';
+ import { useLocalization, useSendbirdChat } from '../../../hooks/useContext';
+ import type { GroupChannelContextsType, GroupChannelModule } from '../types';
++import { EventRegister } from "react-native-event-listeners";
+ 
+ export const GroupChannelContexts: GroupChannelContextsType = {
+   Fragment: createContext({
+@@ -47,6 +49,26 @@ export const GroupChannelContextsProvider: GroupChannelModule['Provider'] = ({
+       if (!enableTypingIndicator) return;
+       setTypingUsers(eventChannel.getTypingUsers());
+     },
++    onOperatorUpdated(channel: SendBird.BaseChannel, operators: Array<SendBird.User>) {
++      EventRegister.emit('operator-updated', {
++        isItMe: operators.filter(o => o.userId === currentUser.userId).length > 0,
++      });
++      EventRegister.emit('channel-update', {
++        operatorCountUpdated: true,
++      });
++    },
++    onUserJoined(channel: SendBird.GroupChannel, user: SendBird.User) {
++      EventRegister.emit('channel-update', {
++        userJoinnedChannel: user,
++      });
++    },
++    onUserBanned(channel: SendBird.OpenChannel | SendBird.GroupChannel, user: SendBird.User) {
++      console.log('channel-update ===> ', JSON.stringify(user));
++
++      EventRegister.emit('channel-update', {
++        userLeftChannel: user,
++      });
++    }
+   });
+ 
+   return (
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/types.ts b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/types.ts
+index d97886b..7629fe3 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/types.ts
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannel/types.ts
+@@ -19,8 +19,10 @@ export interface GroupChannelProps {
+   Fragment: {
+     channel: SendbirdGroupChannel;
+     onChannelDeleted: () => void;
++    onRecordingEvent: (isRecording: number) => void;
+     onPressHeaderLeft: GroupChannelProps['Header']['onPressHeaderLeft'];
+     onPressHeaderRight: GroupChannelProps['Header']['onPressHeaderRight'];
++    onPressHeaderSecondRight: GroupChannelProps['Header']['onPressHeaderSecondRight'];
+ 
+     onBeforeSendFileMessage?: (
+       params: SendbirdFileMessageParams,
+@@ -49,6 +51,8 @@ export interface GroupChannelProps {
+   Header: {
+     onPressHeaderLeft: () => void;
+     onPressHeaderRight: () => void;
++    onPressHeaderSecondRight: () => void;
++    onProfilePressed: () => void;
+   };
+   MessageList: {
+     enableMessageGrouping: boolean;
+@@ -91,6 +95,7 @@ export interface GroupChannelProps {
+   Input: {
+     channel: SendbirdGroupChannel;
+     onSendFileMessage: (file: FileType) => Promise<void>;
++    onRecordingEvent: (number: boolean) => void;
+     onSendUserMessage: (text: string) => Promise<void>;
+     onUpdateFileMessage: (editedFile: FileType, message: SendbirdFileMessage) => Promise<void>;
+     onUpdateUserMessage: (editedText: string, message: SendbirdUserMessage) => Promise<void>;
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/component/GroupChannelListHeader.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/component/GroupChannelListHeader.tsx
+index 066b9c2..4d1ae6d 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/component/GroupChannelListHeader.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/component/GroupChannelListHeader.tsx
+@@ -1,18 +1,77 @@
+-import React, { useContext } from 'react';
+-
++import React, { useContext, useEffect, useState } from 'react';
++import { Image, Text, View, StyleSheet } from 'react-native';
+ import { Icon, useHeaderStyle } from '@sendbird/uikit-react-native-foundation';
+ 
+ import { GroupChannelListContexts } from '../module/moduleContext';
+ import type { GroupChannelListProps } from '../types';
++import { images } from '../../../../../../../src/res/images';
++import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
++import { MainTitle } from '../../../../../../../src/res/globalStyles';
++import Pressable from 'react-native/Libraries/Components/Pressable/Pressable';
++import { colors } from '../../../../../../../src/res/colors';
++import { useIsFocused, useNavigation } from '@react-navigation/native';
++import { fonts } from '../../../../../../../src/res/fonts';
++import { getData, remove,removeData } from '../../../../../../../src/res/asyncStorageHelper';
+ 
+ const GroupChannelListHeader = (_: GroupChannelListProps['Header']) => {
+   const fragment = useContext(GroupChannelListContexts.Fragment);
+   const typeSelector = useContext(GroupChannelListContexts.TypeSelector);
+   const { HeaderComponent } = useHeaderStyle();
++  const { navigate } = useNavigation();
++
++  const [badge_count, setBadgeCount] = useState(0)
++  const isFocused = useIsFocused();
++
++  useEffect(() => {
++    const intervalId = setInterval(() => {
++      getData('call_history', async success => {
++        setBadgeCount(success?.length)
++      }, failure => { });
++    }, 1000);
++    return () => {
++      clearInterval(intervalId);
++    };
++  }, [isFocused])
++
++  const onHistoryCall = () => {
++    removeData('call_history')
++    navigate("DirectCallHistory")
++  }
+ 
+   return (
+-    <HeaderComponent title={fragment.headerTitle} right={<Icon icon={'create'} />} onPressRight={typeSelector.show} />
++    <HeaderComponent
++      title={<MainTitle style={[{ fontSize: wp(8) }]} >{fragment.headerTitle}</MainTitle>}
++      right={
++        <View style={{ flexDirection: "row" }}>
++          <Pressable onPress={typeSelector.show}>
++            <Image source={images.address_book} style={styles._ic} />
++          </Pressable>
++
++          <Pressable onPress={() => { onHistoryCall() }} style={{ marginLeft: wp(3) }}>
++            {badge_count > 0 &&
++              <View style={styles.countWrapper}>
++                <Text style={styles.txt_font}>{badge_count}</Text>
++              </View>
++            }
++            <Image source={images.telephone_ic} style={styles._ic} resizeMode={"contain"} />
++          </Pressable>
++        </View >
++      }
++    //onPressRight={typeSelector.show}
++    />
+   );
+ };
+ 
+ export default GroupChannelListHeader;
++
++const styles = StyleSheet.create({
++  countWrapper: {
++    backgroundColor: 'red', borderRadius: wp(5), position: "absolute", width: wp(4), height: hp(2), right: -3, top: -4, justifyContent: 'center'
++  },
++  txt_font: {
++    color: colors.WHITE, alignSelf: "center", fontFamily: fonts.REGULAR, fontSize: wp(3)
++  },
++  _ic: {
++    width: wp(6), height: wp(6), tintColor: colors.PRIMARY_COLOR
++  }
++});
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/component/GroupChannelListList.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/component/GroupChannelListList.tsx
+index e2b8605..87d73f1 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/component/GroupChannelListList.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/component/GroupChannelListList.tsx
+@@ -7,6 +7,9 @@ import { PASS, SendbirdGroupChannel, useFreshCallback } from '@sendbird/uikit-ut
+ 
+ import { useLocalization, useSendbirdChat } from '../../../hooks/useContext';
+ import type { GroupChannelListProps } from '../types';
++import { ConfirmationDialog, getLanguageValueFromKey } from  '../../../../../../../src/commonAction';
++import { CONST_TYPES } from '../../../../../../../src/uikit-app';
++import Strings from '../../../../../../../src/string_key/Strings';
+ 
+ const GroupChannelListList = ({
+   renderGroupChannelPreview,
+@@ -26,7 +29,8 @@ const GroupChannelListList = ({
+       title: STRINGS.GROUP_CHANNEL_LIST.DIALOG_CHANNEL_TITLE(currentUser?.userId ?? '', channel),
+       menuItems: [
+         {
+-          title: STRINGS.GROUP_CHANNEL_LIST.DIALOG_CHANNEL_NOTIFICATION(channel),
++          // title: STRINGS.GROUP_CHANNEL_LIST.DIALOG_CHANNEL_NOTIFICATION(channel),
++          title: !channel ? '' : channel.myPushTriggerOption === 'off' ? Strings.turn_on_notifications : Strings.turn_off_notifications,
+           onPress: async () => {
+             if (action === 'on') {
+               await channel.setMyPushTriggerOption('default');
+@@ -36,22 +40,43 @@ const GroupChannelListList = ({
+           },
+           onError: () => {
+             toast.show(
+-              action === 'on' ? STRINGS.TOAST.TURN_ON_NOTIFICATIONS_ERROR : STRINGS.TOAST.TURN_OFF_NOTIFICATIONS_ERROR,
++              action === 'on' ? Strings.error_turning_on_notifications : Strings.error_turning_off_notifications,
+               'error',
+             );
+           },
+         },
+         {
+-          title: STRINGS.GROUP_CHANNEL_LIST.DIALOG_CHANNEL_LEAVE,
++          title: Strings.delete,
++          onPress: async () => {
++            ConfirmationDialog(
++              {
++                title: Strings.delete,
++                subtitle: Strings.warn_sure_delete,
++                yesText: Strings.okay
++              },
++              () => {
++                channel.resetMyHistory().then(() => sdk.clearCachedMessages([channel.url]).catch())
++              }
++            )
++          },
++          onError: () => toast.show(Strings.error_leave_channel, 'error'),
++        },
++        {
++          title: Strings.leave_channel,
+           onPress: async () => {
+             channel.leave().then(() => sdk.clearCachedMessages([channel.url]).catch());
+           },
+-          onError: () => toast.show(STRINGS.TOAST.LEAVE_CHANNEL_ERROR, 'error'),
++          onError: () => toast.show(Strings.error_leave_channel, 'error'),
+         },
+       ],
+     });
++    if (channel.customType == CONST_TYPES.ROOM_DIRECT || channel.customType == '') {
++      menuItem.menuItems.splice(2)
++      openMenu(menuItem);
++    } else {
++      openMenu(menuItem);
++    }
+ 
+-    openMenu(menuItem);
+   });
+ 
+   const renderItem: ListRenderItem<SendbirdGroupChannel> = useCallback(
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/types.ts b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/types.ts
+index eaa336f..b732354 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/types.ts
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelList/types.ts
+@@ -23,6 +23,8 @@ export interface GroupChannelListProps {
+       channel: SendbirdGroupChannel,
+       onLongPressChannel: () => void,
+     ) => React.ReactElement | null;
++    renderTabBar,
++    searchQuery: string,
+     // /** Skip type selection, When this is set to true 'channelType' only receive 'GROUP' type **/
+     // skipTypeSelection?: boolean;
+     /** Custom Query creator for channels query **/
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsHeader.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsHeader.tsx
+index 667271f..f3066ae 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsHeader.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsHeader.tsx
+@@ -1,3 +1,4 @@
++// @ts-ignore
+ import React, { useContext } from 'react';
+ 
+ import { Icon, Text, useHeaderStyle, useUIKitTheme } from '@sendbird/uikit-react-native-foundation';
+@@ -5,23 +6,57 @@ import { Icon, Text, useHeaderStyle, useUIKitTheme } from '@sendbird/uikit-react
+ import { GroupChannelSettingsContexts } from '../module/moduleContext';
+ import type { GroupChannelSettingsProps } from '../types';
+ 
+-const GroupChannelSettingsHeader = ({ onPressHeaderLeft }: GroupChannelSettingsProps['Header']) => {
++import { Logger, getGroupChannelTitle } from '@sendbird/uikit-utils';
++import { useLocalization, useSendbirdChat } from '../../../hooks/useContext';
++import { useEventEmitter } from '../../../../../../../src/hooks/useEventEmitter';
++
++// @ts-ignore
++const GroupChannelSettingsHeader = ({ onPressHeaderLeft, permissions, isOwner }: GroupChannelSettingsProps['Header']) => {
+   const { colors } = useUIKitTheme();
+-  const { headerTitle, headerRight, onPressHeaderRight } = useContext(GroupChannelSettingsContexts.Fragment);
++  // @ts-ignore
++  const { headerTitle, headerRight, onPressHeaderRight, channel } = useContext(GroupChannelSettingsContexts.Fragment);
++  // @ts-ignore
++  const { currentUser } = useSendbirdChat();
++  // @ts-ignore
++  const { STRINGS } = useLocalization();
+ 
+   const { HeaderComponent } = useHeaderStyle();
++  const [renderKey, setRenderKey] = React.useState(9382);
++
++  let props = {};
++  if (isOwner || (channel.myRole === 'operator' && permissions?.ActionChangeGroupInfo)) {
++    props = {
++      right: <Icon icon={'edit'} />,
++      onPressRight: onPressHeaderRight,
++    }
++  }
++
++  useEventEmitter('operator-updated', isItMe => {
++    console.log('operator-updated (isItMe) ', isItMe, JSON.stringify(currentUser));
++    if (isItMe) {
++      setRenderKey(prevState => ++prevState);
++    }
++  })
+ 
+   return (
+     <HeaderComponent
+-      title={headerTitle}
++      key={renderKey}
++      title={getGroupChannelTitle(
++        currentUser.userId,
++        channel,
++        STRINGS.LABELS.USER_NO_NAME,
++        STRINGS.LABELS.CHANNEL_NO_MEMBERS,
++      )}
+       left={<Icon icon={'arrow-left'} />}
+       onPressLeft={onPressHeaderLeft}
+-      right={
+-        <Text button color={colors.primary}>
+-          {headerRight}
+-        </Text>
+-      }
+-      onPressRight={onPressHeaderRight}
++      // right={
++      //   // <Text button color={colors.primary}>
++      //   //   {headerRight}
++      //   // </Text>
++      //   <Icon icon={'edit'} />
++      // }
++      // onPressRight={onPressHeaderRight}
++      {...props}
+     />
+   );
+ };
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsInfo.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsInfo.tsx
+index 783d8d9..781c98e 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsInfo.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsInfo.tsx
+@@ -1,5 +1,5 @@
+ import React, { useContext } from 'react';
+-import { View } from 'react-native';
++import { View, Image } from 'react-native';
+ 
+ import { Divider, Text, createStyleSheet } from '@sendbird/uikit-react-native-foundation';
+ import { Logger, getGroupChannelTitle } from '@sendbird/uikit-utils';
+@@ -22,15 +22,19 @@ const GroupChannelSettingsInfo = (_: GroupChannelSettingsProps['Info']) => {
+   return (
+     <View>
+       <View style={styles.userInfoContainer}>
+-        <ChannelCover channel={channel} size={80} containerStyle={styles.avatarContainer} />
+-        <Text h1 numberOfLines={1}>
++        <ChannelCover
++          size={80}
++          isPreview={true}
++          channel={channel}
++        />
++        {/*<Text h1 numberOfLines={1} style={styles.textStyle}>
+           {getGroupChannelTitle(
+             currentUser.userId,
+             channel,
+             STRINGS.LABELS.USER_NO_NAME,
+             STRINGS.LABELS.CHANNEL_NO_MEMBERS,
+           )}
+-        </Text>
++        </Text>*/}
+       </View>
+       <Divider />
+     </View>
+@@ -40,7 +44,7 @@ const GroupChannelSettingsInfo = (_: GroupChannelSettingsProps['Info']) => {
+ const styles = createStyleSheet({
+   container: { flex: 1 },
+   userInfoContainer: { paddingVertical: 24, alignItems: 'center' },
+-  avatarContainer: { marginBottom: 12 },
++  textStyle: { marginTop: 12 },
+   userIdContainer: { paddingVertical: 16 },
+   userIdLabel: { marginBottom: 4 },
+ });
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsMenu.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsMenu.tsx
+index 5ed9e8c..d6553da 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsMenu.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/component/GroupChannelSettingsMenu.tsx
+@@ -1,74 +1,259 @@
+-import React, { useContext } from 'react';
+-import { View } from 'react-native';
++import React, { useContext, useEffect } from "react";
++import { View, Alert } from "react-native";
+ 
+-import type { MenuBarProps } from '@sendbird/uikit-react-native-foundation';
+-import { Icon, MenuBar, Switch, useUIKitTheme } from '@sendbird/uikit-react-native-foundation';
++import type { MenuBarProps } from "@sendbird/uikit-react-native-foundation";
++import { Icon, MenuBar, Switch, useUIKitTheme } from "@sendbird/uikit-react-native-foundation";
++
++import { useLocalization, useSendbirdChat } from "../../../hooks/useContext";
++import { GroupChannelSettingsContexts } from "../module/moduleContext";
++import type { GroupChannelSettingsProps } from "../types";
++
++import { useDirectNavigation } from "../../../../../../../src/navigations/useDirectNavigation";
++import { useGroupChannelMessages } from "@sendbird/uikit-chat-hooks";
++import { Routes } from "../../../../../../../src/libs/navigation";
++import Strings from "../../../../../../../src/string_key/Strings";
+ 
+-import { useLocalization, useSendbirdChat } from '../../../hooks/useContext';
+-import { GroupChannelSettingsContexts } from '../module/moduleContext';
+-import type { GroupChannelSettingsProps } from '../types';
+ 
+ const GroupChannelSettingsMenu = ({
++  isOwner,
++  permissions,
++  onReportChannel,
+   onPressMenuMembers,
+   onPressMenuLeaveChannel,
+-  menuItemsCreator = (menu) => menu,
+-}: GroupChannelSettingsProps['Menu']) => {
+-  const { sdk } = useSendbirdChat();
++  menuItemsCreator = (menu) => menu
++}: GroupChannelSettingsProps["Menu"]) => {
++  const { sdk, currentUser } = useSendbirdChat();
+   const { channel } = useContext(GroupChannelSettingsContexts.Fragment);
+   const { STRINGS } = useLocalization();
+   const { colors } = useUIKitTheme();
++  const { navigation, route } = useDirectNavigation();
++  const { activeChannel } = useGroupChannelMessages(sdk, channel, currentUser?.userId);
++
++  let active_member = activeChannel?.members.filter(obj => {
++    return obj.metaData.phone === currentUser?.metaData.phone;
++  });
+ 
+   const toggleNotification = async () => {
+-    if (channel.myPushTriggerOption === 'off') {
+-      await channel.setMyPushTriggerOption('default');
++    if (channel.myPushTriggerOption === "off") {
++      await channel.setMyPushTriggerOption("default");
++    } else {
++      await channel.setMyPushTriggerOption("off");
++    }
++  };
++
++  const toggleFreeze = async () => {
++    if (channel.isFrozen) {
++      await channel.unfreeze((r, e) => {
++        // console.log('response (unfreeze) => ', r, e);
++      });
+     } else {
+-      await channel.setMyPushTriggerOption('off');
++      await channel.freeze((r, e) => {
++        // console.log('response (freeze) => ', r, e);
++      });
+     }
+   };
+ 
+-  const menuItems: MenuBarProps[] = menuItemsCreator([
++  const CONST_USER_MENU = [
++    {
++      id: '',
++      icon: "members",
++      primaryTitle: true,
++      name: String(channel.memberCount) + " " + Strings.members,
++      onPress: () => onPressMenuMembers()
++      //  actionLabel: String(channel.memberCount),
++      // actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: '',
++      icon: "broadcast",
++      name: channel?.isSuper ? Strings.report_channel : Strings.report_group,
++      onPress: () => onReportChannel()
++      //   actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: '',
++      icon: "search",
++      name: Strings.search_message,
++      // @ts-ignore
++      onPress: () => navigation.replace('SearchMessageScreen', {
++        "serializedChannel": channel.serialize(),
++      }),
++      //   actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: '',
++      icon: "notifications",
++      name: Strings.notifications,
++      onPress: toggleNotification,
++      actionItem: <Switch value={channel.myPushTriggerOption !== "off"} onChangeValue={toggleNotification} />
++    },
++    {
++      id: '',
++      icon: "leave",
++      // iconColor: colors.error,
++      name: channel?.isSuper ? Strings.leave_channel : Strings.leave_group,
++      onPress: () => {
++        channel.leave().then(() => {
++          onPressMenuLeaveChannel();
++          sdk.clearCachedMessages([channel.url]).catch();
++        });
++      }
++    },
++  ];
++
++  //channel?.isSuper ? CHANNEL : GROUP
++
++  const CONST_OPERATOR_MENU = [
++    {
++      id: '',
++      icon: "members",
++      primaryTitle: true,
++      name: String(channel.memberCount) + " " + Strings.members,
++      onPress: () => onPressMenuMembers()
++      //  actionLabel: String(channel.memberCount),
++      // actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: 'ActionAddMembers',
++      icon: "plus",
++      name: Strings.add_members,
++      onPress: () => navigation.navigate("InviteUser", { channel: channel })
++      //  actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: 'ActionInviteUsersViaLink',
++      icon: "add",
++      name: 'Invite Members',
++      onPress: () => navigation.navigate(Routes.GroupChannelInviteViaLink, route.params),
++      // actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: 'ActionAddOperators',
++      icon: "operator",
++      name: channel?.isSuper ? Strings.operators : Strings.admins,
++      onPress: () => onPressMenuMembers(true)
++      //  actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: 'ActionBanMembers',
++      icon: "ban",
++      name: Strings.banned_members,
++      // onPress: () => underDevelopment()
++      onPress: () => navigation.navigate("BannedMembers", { "channel": channel, "type": 1 }),
++      //   actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: 'ActionMuteMembers',
++      icon: "mute",
++      name: Strings.muted_members,
++      onPress: () => navigation.navigate("BannedMembers", { "channel": channel, "type": 2 }),
++      //   actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: 'ActionReportMembers',
++      icon: "error",
++      name: Strings.reported_members,
++      onPress: () => navigation.navigate("ReportedMemberList", { "channel": channel }),
++      //   actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: '',
++      icon: "broadcast",
++      name: channel?.isSuper ? Strings.report_channel : Strings.report_group,
++      onPress: () => onReportChannel()
++      //   actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
++    {
++      id: '',
++      icon: "search",
++      name: Strings.search_message,
++      // @ts-ignore
++      onPress: () => navigation.replace('SearchMessageScreen', {
++        "serializedChannel": channel.serialize(),
++      }),
++      //   actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++    },
+     {
+-      icon: 'notifications',
+-      name: STRINGS.GROUP_CHANNEL_SETTINGS.MENU_NOTIFICATION,
++      id: '',
++      icon: "notifications",
++      name: Strings.notifications,
+       onPress: toggleNotification,
+-      actionItem: <Switch value={channel.myPushTriggerOption !== 'off'} onChangeValue={toggleNotification} />,
++      actionItem: <Switch value={channel.myPushTriggerOption !== "off"} onChangeValue={toggleNotification} />
+     },
+     {
+-      icon: 'members',
+-      name: STRINGS.GROUP_CHANNEL_SETTINGS.MENU_MEMBERS,
+-      onPress: () => onPressMenuMembers(),
+-      actionLabel: String(channel.memberCount),
+-      actionItem: <Icon icon={'chevron-right'} color={colors.onBackground01} />,
++      id: 'ActionFreezeChannel',
++      icon: "freeze",
++      name: Strings.freeze_channel,
++      onPress: toggleFreeze,
++      actionItem: <Switch value={channel.isFrozen} onChangeValue={toggleFreeze} />
+     },
+     {
+-      icon: 'leave',
+-      iconColor: colors.error,
+-      name: STRINGS.GROUP_CHANNEL_SETTINGS.MENU_LEAVE_CHANNEL,
++      id: '',
++      icon: "leave",
++      // iconColor: colors.error,
++      name: channel?.isSuper ? Strings.leave_channel : Strings.leave_group,
+       onPress: () => {
+         channel.leave().then(() => {
+           onPressMenuLeaveChannel();
+           sdk.clearCachedMessages([channel.url]).catch();
+         });
+-      },
++      }
+     },
+-  ]);
++  ];
++
++  // @ts-ignore
++  const menuItems: MenuBarProps[] = menuItemsCreator(active_member[0].role
++    === 'operator' ? CONST_OPERATOR_MENU : CONST_USER_MENU
++  );
+ 
+   return (
+     <View>
+-      {menuItems.map((menu) => {
+-        return (
+-          <MenuBar
+-            key={menu.name}
+-            onPress={menu.onPress}
+-            name={menu.name}
+-            disabled={menu.disabled}
+-            icon={menu.icon}
+-            iconColor={menu.iconColor}
+-            iconBackgroundColor={menu.iconBackgroundColor}
+-            actionLabel={menu.actionLabel}
+-            actionItem={menu.actionItem}
+-          />
+-        );
++      {menuItems
++        .map((menu, index) => ((active_member?.length > 0
++          && active_member[0].role == 'operator'
++          && !channel?.isSuper && (
++            index == 2 ||
++            index == 4 ||
++            index == 5 ||
++            index == 6 ||
++            index == 10
++          )
++        ) ? null : menu))
++        .map((menu) => {
++          if (menu === null) {
++            return null;
++          }
++
++          const menuItem = (menu) => (
++            <MenuBar
++              key={menu.name}
++              onPress={menu.onPress}
++              name={menu.name}
++              primaryTitle={menu.primaryTitle}
++              disabled={menu.disabled}
++              icon={menu.icon}
++              iconColor={menu.iconColor}
++              iconBackgroundColor={menu.iconBackgroundColor}
++              actionLabel={menu.actionLabel}
++              actionItem={menu.actionItem}
++            />
++          )
++
++          if (isOwner) {
++            return menuItem(menu);
++          }
++
++          switch (menu.id) {
++            case '': return menuItem(menu);
++            case 'ActionAddMembers': return permissions.ActionAddMembers ? menuItem(menu) : null;
++            case 'ActionInviteUsersViaLink': return permissions.ActionInviteUsersViaLink ? menuItem(menu) : null;
++            case 'ActionAddOperators': return permissions.ActionAddOperators ? menuItem(menu) : null;
++            case 'ActionBanMembers': return permissions.ActionBanMembers ? menuItem(menu) : null;
++            case 'ActionMuteMembers': return permissions.ActionMuteMembers ? menuItem(menu) : null;
++            case 'ActionReportMembers': return permissions.ActionReportMembers ? menuItem(menu) : null;
++            case 'ActionReportMembers': return permissions.ActionReportMembers ? menuItem(menu) : null;
++            case 'ActionFreezeChannel': return permissions.ActionFreezeChannel ? menuItem(menu) : null;
++          }
+       })}
+     </View>
+   );
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/module/moduleContext.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/module/moduleContext.tsx
+index b06c33b..690a6a0 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/module/moduleContext.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelSettings/module/moduleContext.tsx
+@@ -11,13 +11,17 @@ import {
+   useForceUpdate,
+   useUniqId,
+ } from '@sendbird/uikit-utils';
++import { getChannelWithCustomType, CONST_TYPES } from '../../../../../../../src/uikit-app';
++
++
+ 
+ import ProviderLayout from '../../../components/ProviderLayout';
+ import { useLocalization, usePlatformService, useSendbirdChat } from '../../../hooks/useContext';
+ import SBUError from '../../../libs/SBUError';
+ import SBUUtils from '../../../libs/SBUUtils';
+ import type { GroupChannelSettingsContextsType, GroupChannelSettingsModule } from '../types';
+-
++import { compressImage } from '../../../../../../../src/uikit-app';
++import Strings from '../../../../../../../src/string_key/Strings';
+ export const GroupChannelSettingsContexts: GroupChannelSettingsContextsType = {
+   Fragment: createContext({
+     channel: {} as SendbirdGroupChannel,
+@@ -55,6 +59,11 @@ export const GroupChannelSettingsContextsProvider: GroupChannelSettingsModule['P
+   const { openPrompt } = usePrompt();
+   const { openMenu } = useActionMenu();
+ 
++  const identifier =
++    getChannelWithCustomType(channel).customType === CONST_TYPES.ROOM_GROUP
++      ? 'Admin'
++      : 'Operator';
++
+   const updateChannel = useCallback(
+     async (params: SendbirdGroupChannelParams) => {
+       const updatedChannel = await activeChannel.updateChannel(params);
+@@ -65,10 +74,18 @@ export const GroupChannelSettingsContextsProvider: GroupChannelSettingsModule['P
+   );
+ 
+   const changeChannelName = useCallback(() => {
++
++    
++
++    const titleForSubmit = Strings.enter_name;
++    const titleForName = identifier === "Operator" ? Strings.change_channel_name : Strings.change_group_name;
++    const titleForPlaceholder = identifier === "Operator" ? Strings.change_channel_image : Strings.change_group_image;
++
+     openPrompt({
+-      title: STRINGS.GROUP_CHANNEL_SETTINGS.DIALOG_CHANGE_NAME_PROMPT_TITLE,
+-      submitLabel: STRINGS.GROUP_CHANNEL_SETTINGS.DIALOG_CHANGE_NAME_PROMPT_OK,
+-      placeholder: STRINGS.GROUP_CHANNEL_SETTINGS.DIALOG_CHANGE_NAME_PROMPT_PLACEHOLDER,
++      title: titleForName,
++      cancelLabel: Strings.Cancel,
++      submitLabel: Strings.save,
++      placeholder: Strings.enter_name,
+       defaultValue: activeChannel.name,
+       onSubmit: async (channelName) => {
+         const params = new sdk.GroupChannelParams();
+@@ -79,35 +96,37 @@ export const GroupChannelSettingsContextsProvider: GroupChannelSettingsModule['P
+   }, [STRINGS, updateChannel, activeChannel.name]);
+ 
+   const changeChannelImage = useCallback(() => {
++
++    const title = (identifier === "Operator" ? Strings.change_channel_image : Strings.change_group_image)
+     openMenu({
+-      title: STRINGS.GROUP_CHANNEL_SETTINGS.DIALOG_CHANGE_IMAGE_MENU_TITLE,
++      title: title,
+       menuItems: [
+         {
+-          title: STRINGS.GROUP_CHANNEL_SETTINGS.DIALOG_CHANGE_IMAGE_MENU_CAMERA,
++          title: Strings.take_photo,
+           onPress: async () => {
+             const file = await fileService.openCamera({
+               mediaType: 'photo',
+               onOpenFailure: (error) => {
+                 if (error.code === SBUError.CODE.ERR_PERMISSIONS_DENIED) {
+                   alert({
+-                    title: STRINGS.DIALOG.ALERT_PERMISSIONS_TITLE,
++                    title: Strings.allow_permission,
+                     message: STRINGS.DIALOG.ALERT_PERMISSIONS_MESSAGE('camera', 'UIKitSample'),
+-                    buttons: [{ text: STRINGS.DIALOG.ALERT_PERMISSIONS_OK, onPress: () => SBUUtils.openSettings() }],
++                    buttons: [{ text: Strings.cap_settings, onPress: () => SBUUtils.openSettings() }],
+                   });
+                 } else {
+-                  toast.show(STRINGS.TOAST.OPEN_CAMERA_ERROR, 'error');
++                  toast.show(Strings.error_open_camera, 'error');
+                 }
+               },
+             });
+             if (!file) return;
+ 
+             const params = new sdk.GroupChannelParams();
+-            params.coverImage = file;
++            params.coverImage = await compressImage(file);
+             await updateChannel(params);
+           },
+         },
+         {
+-          title: STRINGS.GROUP_CHANNEL_SETTINGS.DIALOG_CHANGE_IMAGE_MENU_PHOTO_LIBRARY,
++          title: Strings.choose_photo,
+           onPress: async () => {
+             const files = await fileService.openMediaLibrary({
+               selectionLimit: 1,
+@@ -115,19 +134,19 @@ export const GroupChannelSettingsContextsProvider: GroupChannelSettingsModule['P
+               onOpenFailure: (error) => {
+                 if (error.code === SBUError.CODE.ERR_PERMISSIONS_DENIED) {
+                   alert({
+-                    title: STRINGS.DIALOG.ALERT_PERMISSIONS_TITLE,
++                    title: Strings.allow_permission,
+                     message: STRINGS.DIALOG.ALERT_PERMISSIONS_MESSAGE('device storage', 'UIKitSample'),
+-                    buttons: [{ text: STRINGS.DIALOG.ALERT_PERMISSIONS_OK, onPress: () => SBUUtils.openSettings() }],
++                    buttons: [{ text: Strings.cap_settings, onPress: () => SBUUtils.openSettings() }],
+                   });
+                 } else {
+-                  toast.show(STRINGS.TOAST.OPEN_PHOTO_LIBRARY_ERROR, 'error');
++                  toast.show(Strings.error_open_photo_lib, 'error');
+                 }
+               },
+             });
+             if (!files || !files[0]) return;
+ 
+             const params = new sdk.GroupChannelParams();
+-            params.coverImage = files[0];
++            params.coverImage = await compressImage(files[0]);
+             await updateChannel(params);
+           },
+         },
+@@ -136,10 +155,13 @@ export const GroupChannelSettingsContextsProvider: GroupChannelSettingsModule['P
+   }, [STRINGS, updateChannel]);
+ 
+   const onPressHeaderRight = useCallback(() => {
++
++    const titleForName = (identifier === "Operator" ? Strings.change_channel_name : Strings.change_group_name)
++    const titleForImage = (identifier === "Operator" ? Strings.change_channel_image : Strings.change_group_image)
+     openSheet({
+       sheetItems: [
+-        { title: STRINGS.GROUP_CHANNEL_SETTINGS.DIALOG_CHANGE_NAME, onPress: changeChannelName },
+-        { title: STRINGS.GROUP_CHANNEL_SETTINGS.DIALOG_CHANGE_IMAGE, onPress: changeChannelImage },
++        { title: titleForName, onPress: changeChannelName },
++        { title: titleForImage, onPress: changeChannelImage },
+       ],
+     });
+   }, [STRINGS, changeChannelImage, changeChannelName]);
+@@ -149,8 +171,8 @@ export const GroupChannelSettingsContextsProvider: GroupChannelSettingsModule['P
+       <GroupChannelSettingsContexts.Fragment.Provider
+         value={{
+           channel: activeChannel,
+-          headerTitle: STRINGS.GROUP_CHANNEL_SETTINGS.HEADER_TITLE,
+-          headerRight: STRINGS.GROUP_CHANNEL_SETTINGS.HEADER_RIGHT,
++          headerTitle: Strings.channel_information,
++          headerRight: Strings.edit,
+           onPressHeaderRight,
+         }}
+       >
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelUserList/types.ts b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelUserList/types.ts
+index 0ea0e7c..21f16f6 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelUserList/types.ts
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/groupChannelUserList/types.ts
+@@ -44,6 +44,8 @@ export interface GroupChannelMembersProps<User> {
+     onPressHeaderRight: () => void;
+     sortComparator?: UseUserListOptions<User>['sortComparator'];
+     renderUser?: UserListProps<User>['List']['renderUser'];
++    menuItemCreator?: UserListProps<User>['List']['menuItemCreator'];
++
+   };
+ }
+ export type GroupChannelMembersFragment<User> = CommonComponent<GroupChannelMembersProps<User>['Fragment']>;
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/userList/component/UserListHeader.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/userList/component/UserListHeader.tsx
+index a259365..b5eb132 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/userList/component/UserListHeader.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/userList/component/UserListHeader.tsx
+@@ -10,6 +10,8 @@ const UserListHeader = <T,>({
+   onPressHeaderRight,
+   right,
+   left,
++  title = null,
++  showSave = true,
+   shouldActivateHeaderRight = (selectedUsers) => selectedUsers.length > 0,
+ }: UserListProps<T>['Header']) => {
+   const { headerTitle, headerRight } = useContext(UserListContexts.Fragment);
+@@ -19,19 +21,34 @@ const UserListHeader = <T,>({
+ 
+   const isActive = shouldActivateHeaderRight(selectedUsers);
+ 
++  let headerProps = null;
++
++  /**
++   * For Operator permission screen...
++   */
++  if (title !== null && showSave) {
++    headerProps = {
++      right: (
++        <Text button color={colors.primary}>Save</Text>
++      ),
++      onPressRight: () => onPressHeaderRight([]),
++    }
++  }
++
+   return (
+     <HeaderComponent
+-      title={headerTitle}
+-      right={
+-        right ?? (
+-          <Text button color={isActive ? colors.primary : colors.onBackground04}>
+-            {headerRight}
+-          </Text>
+-        )
+-      }
+-      onPressRight={isActive ? () => onPressHeaderRight(selectedUsers) : undefined}
++      title={title || headerTitle}
++      // right={
++      //   right ?? (
++      //     <Text button color={isActive ? colors.primary : colors.onBackground04}>
++      //       {headerRight}
++      //     </Text>
++      //   )
++      // }
++      // onPressRight={isActive ? () => onPressHeaderRight(selectedUsers) : undefined}
+       left={left ?? <Icon icon={'arrow-left'} />}
+       onPressLeft={onPressHeaderLeft}
++      {...headerProps}
+     />
+   );
+ };
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/userList/component/UserListList.tsx b/node_modules/@sendbird/uikit-react-native/src/domain/userList/component/UserListList.tsx
+index b31c787..3091d2e 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/userList/component/UserListList.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/userList/component/UserListList.tsx
+@@ -1,9 +1,18 @@
+-import React, { useCallback, useContext } from 'react';
+-import { FlatList, ListRenderItem } from 'react-native';
++import React, { useCallback, useContext, useState } from 'react';
++import { FlatList, ListRenderItem, View, Text} from 'react-native';
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
++import {StyleSheet} from 'react-native';
+ 
+ import { UserListContexts } from '../module/moduleContext';
+ import type { UserListContextsType, UserListProps } from '../types';
++import { fonts } from '../../../../../../../src/res/fonts';
++import { colors } from '../../../../../../../src/res/colors';
++import { getChannelWithCustomType } from '../../../../../../../src/uikit-app';
++import { CONST_TYPES } from '../../../../../../../src/uikit-app';
++import { UserListModule } from '@sendbird/uikit-react-native';
++import { useSendbirdChat } from '@sendbird/uikit-react-native/src/hooks/useContext';
++import { useAppNavigation } from '../../../../../../../src/hooks/useAppNavigation';
++import { Routes } from '../../../../../../../src/libs/navigation';
+ 
+ const UserListList = <T,>({
+   users,
+@@ -12,14 +21,45 @@ const UserListList = <T,>({
+   renderUser,
+   onLoadNext,
+   ListEmptyComponent,
++  showSave
+ }: UserListProps<T>['List']) => {
+   const context = useContext(UserListContexts.List as UserListContextsType<T>['List']);
++  const contextData = useContext(UserListContexts.Fragment as UserListContextsType<T>['Headers']);
++
++  console.log("My Fragment", showSave);
++
++  const {navigation, params} = useAppNavigation<Routes.GroupChannelInvite>();
++
++  // @ts-ignore
++  const {sdk} = useSendbirdChat();
++  const [channel] = useState(() =>
++    sdk.GroupChannel.buildFromSerializedData(params.serializedChannel),
++  );
++
++  const identifier =
++    getChannelWithCustomType(channel).customType === CONST_TYPES.ROOM_GROUP
++      ? ['admins', "group"]
++      : ['operators', "channel"]
++
++      let [id, type] = identifier
++
++  //UserListModule<User>
+   const renderItem: ListRenderItem<T> = useCallback(
+     ({ item }) => renderUser?.(item, context.selectedUsers, context.setSelectedUsers),
+     [renderUser, context.selectedUsers, context.setSelectedUsers],
+   );
+   const { left, right } = useSafeAreaInsets();
+ 
++  const ListFooter = () => {
++    //View to set in Footer
++    return (
++<View style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end' , top: 10}}>
++  <Text numberOfLines={2}  style={{position: 'absolute', left : 20, fontFamily:  fonts.REGULAR,
++                color: colors.LIGHT_GRAY, width : "90%"  }}>You can add {id} to help you for manage your {type}. Press and hold to remove them. </Text>
++</View>
++    );
++  };
++
+   return (
+     <FlatList
+       data={users}
+@@ -29,8 +69,12 @@ const UserListList = <T,>({
+       onEndReached={onLoadNext}
+       contentContainerStyle={{ paddingLeft: left, paddingRight: right, flexGrow: 1 }}
+       ListEmptyComponent={ListEmptyComponent}
++      ListFooterComponent={!showSave && ListFooter}
++      
+     />
+   );
+ };
+ 
++
++
+ export default UserListList;
+diff --git a/node_modules/@sendbird/uikit-react-native/src/domain/userList/types.ts b/node_modules/@sendbird/uikit-react-native/src/domain/userList/types.ts
+index 496d651..cbaf3b0 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/domain/userList/types.ts
++++ b/node_modules/@sendbird/uikit-react-native/src/domain/userList/types.ts
+@@ -3,6 +3,7 @@ import type React from 'react';
+ import type { ContextValue } from '@sendbird/uikit-utils';
+ 
+ import type { CommonComponent } from '../../types';
++import { ActionMenuItem } from '@sendbird/uikit-react-native-foundation';
+ 
+ export interface UserListProps<User> {
+   /** Props for `UserListModule.Header` **/
+@@ -31,6 +32,9 @@ export interface UserListProps<User> {
+     refreshing?: boolean;
+     /** List empty component **/
+     ListEmptyComponent?: React.ReactElement;
++    menuItemCreator?: (defaultMenuItem: ActionMenuItem) => ActionMenuItem;
++    
++
+   };
+   /** Props for `UserListModule.Provider` **/
+   Provider: {
+diff --git a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelCreateFragment.tsx b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelCreateFragment.tsx
+index e263a85..9fb6464 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelCreateFragment.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelCreateFragment.tsx
+@@ -89,7 +89,7 @@ const createGroupChannelCreateFragment = <UserType,>(
+ 
+     return (
+       <UserListModule.Provider
+-        headerRight={(selectedUsers) => STRINGS.GROUP_CHANNEL_CREATE.HEADER_RIGHT({ selectedUsers })}
++        headerRight={(selectedUsers) => {  STRINGS.GROUP_CHANNEL_CREATE.HEADER_RIGHT({ selectedUsers }) }}
+         headerTitle={STRINGS.GROUP_CHANNEL_CREATE.HEADER_TITLE}
+       >
+         <UserListModule.Header
+@@ -99,6 +99,7 @@ const createGroupChannelCreateFragment = <UserType,>(
+ 
+             if (channelType === 'BROADCAST') params.isBroadcast = true;
+             if (channelType === 'SUPER_GROUP') params.isSuper = true;
++            params.isPublic = true;
+             if (currentUser) params.operatorUserIds = [currentUser.userId];
+             params.addUserIds(userIdsGenerator(users));
+             params.name = '';
+diff --git a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelFragment.tsx b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelFragment.tsx
+index ed92aa5..5e0ecae 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelFragment.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelFragment.tsx
+@@ -1,7 +1,8 @@
+-import React, { useMemo } from 'react';
+-
++import React, { useMemo, useEffect } from 'react';
++import {Text} from 'react-native';
+ import { useGroupChannelMessages } from '@sendbird/uikit-chat-hooks';
+ import { NOOP, PASS, messageComparator, useFreshCallback } from '@sendbird/uikit-utils';
++import GestureRecognizer, { swipeDirections } from "react-native-swipe-detect";
+ 
+ import MessageRenderer from '../components/MessageRenderer';
+ import NewMessagesButton from '../components/NewMessagesButton';
+@@ -10,6 +11,7 @@ import StatusComposition from '../components/StatusComposition';
+ import createGroupChannelModule from '../domain/groupChannel/module/createGroupChannelModule';
+ import type { GroupChannelFragment, GroupChannelModule, GroupChannelProps } from '../domain/groupChannel/types';
+ import { useSendbirdChat } from '../hooks/useContext';
++import { useEventEmitter } from '../../../../../src/hooks/useEventEmitter';
+ 
+ const createGroupChannelFragment = (initModule?: Partial<GroupChannelModule>): GroupChannelFragment => {
+   const GroupChannelModule = createGroupChannelModule(initModule);
+@@ -22,11 +24,22 @@ const createGroupChannelFragment = (initModule?: Partial<GroupChannelModule>): G
+     enableTypingIndicator = true,
+     onPressHeaderLeft = NOOP,
+     onPressHeaderRight = NOOP,
++    onProfilePressed = NOOP,
+     onPressImageMessage,
+     onPressMediaMessage = NOOP,
+     onChannelDeleted = NOOP,
+     onBeforeSendFileMessage = PASS,
+     onBeforeSendUserMessage = PASS,
++    onReplyMessage,
++    onUploadFileProgress,
++    emojiView,
++    onReadByPressed,
++    onDeliveredToPressed,
++    onRecordingEvent,
++    onEmojiPressed,
++    isKeyboardVisible,
++    isEmojiKeyboardVisible,
++    onCameraPressed,
+     channel,
+     keyboardAvoidOffset,
+     queryCreator,
+@@ -101,34 +114,74 @@ const createGroupChannelFragment = (initModule?: Partial<GroupChannelModule>): G
+       },
+     );
+ 
++    useEventEmitter('send-file-message', data => onSendFileMessage(data.file));
++
++    useEffect(() => {
++      global.hideNotification = true;
++      return () => {
++        global.hideNotification = false;
++      }
++    }, [])
++
+     return (
+       <GroupChannelModule.Provider
+         channel={activeChannel}
+         enableTypingIndicator={enableTypingIndicator}
+         keyboardAvoidOffset={keyboardAvoidOffset}
+       >
+-        <GroupChannelModule.Header onPressHeaderLeft={onPressHeaderLeft} onPressHeaderRight={onPressHeaderRight} />
++        <GroupChannelModule.Header
++          onProfilePressed={onProfilePressed}
++          onPressHeaderLeft={onPressHeaderLeft}
++          onPressHeaderRight={onPressHeaderRight}
++        />
+         <StatusComposition loading={loading} LoadingComponent={<GroupChannelModule.StatusLoading />}>
+-          <GroupChannelModule.MessageList
+-            enableMessageGrouping={enableMessageGrouping}
+-            currentUserId={currentUser?.userId}
+-            channel={activeChannel}
+-            renderMessage={_renderMessage}
+-            messages={messages}
+-            nextMessages={nextMessages}
+-            newMessagesFromMembers={newMessagesFromMembers}
+-            onTopReached={prev}
+-            onBottomReached={next}
+-            renderNewMessagesButton={renderNewMessagesButton}
+-            renderScrollToBottomButton={renderScrollToBottomButton}
+-            onResendFailedMessage={resendMessage}
+-            onDeleteMessage={deleteMessage}
+-            onPressImageMessage={onPressImageMessage}
+-            onPressMediaMessage={onPressMediaMessage}
+-            flatListProps={memoizedFlatListProps}
+-          />
++          <GestureRecognizer
++            onSwipe={(direction, state) => {
++              console.log("isEmojiKeyboardVisible => ", isEmojiKeyboardVisible);
++              console.log("direction, state => ", direction, state);
++              onEmojiPressed(isKeyboardVisible ? -1 : false);
++            }}
++            config={{
++              enableSwipeUp: false,
++              enableSwipeDown: isEmojiKeyboardVisible,
++              enableSwipeLeft: false,
++              enableSwipeRight: false,
++              velocityThreshold: 0.3,
++              directionalOffsetThreshold: 80,
++            }}
++            style={{
++              flex: 1,
++            }}
++          >
++            <GroupChannelModule.MessageList
++              enableMessageGrouping={enableMessageGrouping}
++              currentUserId={currentUser?.userId}
++              channel={activeChannel}
++              renderMessage={_renderMessage}
++              messages={messages}
++              nextMessages={nextMessages}
++              newMessagesFromMembers={newMessagesFromMembers}
++              onTopReached={prev}
++              onBottomReached={next}
++              renderNewMessagesButton={renderNewMessagesButton}
++              renderScrollToBottomButton={renderScrollToBottomButton}
++              onResendFailedMessage={resendMessage}
++              onDeleteMessage={deleteMessage}
++              onReplyMessage={onReplyMessage}
++              onUploadFileProgress={onUploadFileProgress}
++              onReadByPressed={onReadByPressed}
++              onDeliveredToPressed={onDeliveredToPressed}
++              onPressImageMessage={onPressImageMessage}
++              onPressMediaMessage={onPressMediaMessage}
++              flatListProps={memoizedFlatListProps}
++            />
++          </GestureRecognizer>
+           <GroupChannelModule.Input
+             channel={activeChannel}
++            emojiView={emojiView}
++            onEmojiPressed={onEmojiPressed}
++            onCameraPressed={onCameraPressed}
++            onRecordingEvent={val => onRecordingEvent(val, onSendFileMessage)}
+             onSendFileMessage={onSendFileMessage}
+             onSendUserMessage={onSendUserMessage}
+             onUpdateFileMessage={onUpdateFileMessage}
+diff --git a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelInviteFragment.tsx b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelInviteFragment.tsx
+index 5eb3850..51193d2 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelInviteFragment.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelInviteFragment.tsx
+@@ -40,7 +40,10 @@ const createGroupChannelInviteFragment = <UserType,>(
+     userIdsGenerator = defaultUserIdsGenerator,
+     sortComparator,
+     queryCreator,
++    customTitle = '',
++    headerOnly,
+     renderUser,
++    children,
+   }) => {
+     const { sdk } = useSendbirdChat();
+     const { STRINGS } = useLocalization();
+@@ -94,7 +97,7 @@ const createGroupChannelInviteFragment = <UserType,>(
+     return (
+       <UserListModule.Provider
+         headerRight={(selectedUsers) => STRINGS.GROUP_CHANNEL_INVITE.HEADER_RIGHT({ selectedUsers })}
+-        headerTitle={STRINGS.GROUP_CHANNEL_INVITE.HEADER_TITLE}
++        headerTitle={headerOnly ? customTitle : STRINGS.GROUP_CHANNEL_INVITE.HEADER_TITLE}
+       >
+         <UserListModule.Header
+           onPressHeaderLeft={onPressHeaderLeft}
+@@ -104,21 +107,25 @@ const createGroupChannelInviteFragment = <UserType,>(
+             onInviteMembers(updatedChannel);
+           }}
+         />
+-        <StatusComposition
+-          loading={loading}
+-          error={Boolean(error)}
+-          LoadingComponent={<UserListModule.StatusLoading />}
+-          ErrorComponent={<UserListModule.StatusError onPressRetry={() => refresh()} />}
+-        >
+-          <UserListModule.List
+-            onLoadNext={next}
+-            users={users}
+-            renderUser={_renderUser}
+-            onRefresh={refresh}
+-            refreshing={refreshing}
+-            ListEmptyComponent={<UserListModule.StatusEmpty />}
+-          />
+-        </StatusComposition>
++        {!headerOnly ? (
++          <>
++            <StatusComposition
++              loading={loading}
++              error={Boolean(error)}
++              LoadingComponent={<UserListModule.StatusLoading />}
++              ErrorComponent={<UserListModule.StatusError onPressRetry={() => refresh()} />}
++            >
++              <UserListModule.List
++                onLoadNext={next}
++                users={users}
++                renderUser={_renderUser}
++                onRefresh={refresh}
++                refreshing={refreshing}
++                ListEmptyComponent={<UserListModule.StatusEmpty />}
++              />
++            </StatusComposition>
++          </>
++        ) : children}
+       </UserListModule.Provider>
+     );
+   };
+diff --git a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelListFragment.tsx b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelListFragment.tsx
+index 4f2652b..b31f725 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelListFragment.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelListFragment.tsx
+@@ -1,4 +1,5 @@
+-import React, { useEffect } from 'react';
++// @ts-ignore
++import React, { useEffect } from "react";
+ import { AppState } from 'react-native';
+ 
+ import { useGroupChannelList } from '@sendbird/uikit-chat-hooks';
+@@ -13,7 +14,12 @@ import type {
+   GroupChannelListProps,
+ } from '../domain/groupChannelList/types';
+ import { useSendbirdChat } from '../hooks/useContext';
++import { TabBarComponent } from "../../../../../src/uikit-app/GroupChannelTabs/GroupChannelListScreen";
++import { CONST_TABS, CONST_TYPES, getChannelWithCustomType } from "../../../../../src/uikit-app";
+ 
++
++import { getrelamContactName } from "../../../../../src/commonAction";
++import { useEventEmitter } from "../../../../../src/hooks/useEventEmitter";
+ const createGroupChannelListFragment = (initModule?: Partial<GroupChannelListModule>): GroupChannelListFragment => {
+   const GroupChannelListModule = createGroupChannelListModule(initModule);
+   return ({
+@@ -24,24 +30,42 @@ const createGroupChannelListFragment = (initModule?: Partial<GroupChannelListMod
+     collectionCreator,
+     renderGroupChannelPreview,
+     // skipTypeSelection = true,
++    searchQuery='',
++    renderTabBar = null,
+     flatListProps = {},
+     menuItemCreator = PASS,
+   }) => {
++    const refListener = React.useRef(null);
++    const [selectedTab, setSelectedTab] = React.useState(CONST_TYPES.ROOM_ALL);
++    // @ts-ignore
+     const { sdk, currentUser, features, markAsDeliveredWithChannel } = useSendbirdChat();
+-    const { groupChannels, next, loading } = useGroupChannelList(sdk, currentUser?.userId, {
++    const [openChannels, setOpenChannels] = React.useState([]);
++    const { groupChannels, next, loading, refresh } = useGroupChannelList(sdk, currentUser?.userId, {
+       queryCreator,
+       collectionCreator,
+       enableCollectionWithoutLocalCache: !queryCreator,
+     });
++    useEventEmitter('group-channel-update', data => {
++      console.log('group-channel-update ==> ', JSON.stringify(data));
++      refresh()
++    });
++
++    const removeListener = () => {
++      if (refListener.current !== null) {
++        refListener.current.remove();
++        refListener.current = null;
++      }
++    }
+ 
+-    if (features.deliveryReceiptEnabled) {
+-      useEffect(() => {
+-        const listener = AppState.addEventListener('change', (status) => {
++    useEffect(() => {
++      if (features.deliveryReceiptEnabled) {
++        removeListener();
++        refListener.current = AppState.addEventListener('change', (status) => {
+           if (status === 'active') groupChannels.forEach(markAsDeliveredWithChannel);
+         });
+-        return () => listener.remove();
+-      }, []);
+-    }
++      }
++      return () => removeListener();
++    }, []);
+ 
+     const _renderGroupChannelPreview: GroupChannelListProps['List']['renderGroupChannelPreview'] = useFreshCallback(
+       (channel, onLongPressChannel) => {
+@@ -61,14 +85,81 @@ const createGroupChannelListFragment = (initModule?: Partial<GroupChannelListMod
+       return null;
+     }
+ 
++    // sdk.OpenChannel.createOpenChannelListQuery().next((openChannels, e) => {
++    //   openChannels.forEach(c => {
++    //     if (c.url === 'sendbird_open_channel_124993_061b2abf0e1700fe5519c580d8c8cc3a03ffc9d7') {
++    //       console.log('openChannels ===> ', JSON.stringify(c));
++    //     }
++    //   })
++    //   setOpenChannels(() => openChannels);
++    // });
++    // console.log('groupChannels ===> ', JSON.stringify(groupChannels[0]));
++
+     return (
+       <GroupChannelListModule.Provider>
+         <GroupChannelListModule.Header />
++        <TabBarComponent
++          onSelected={tab => {
++            if (tab === CONST_TABS.ALL) {
++              setSelectedTab(() => CONST_TYPES.ROOM_ALL);
++            } else if (tab === CONST_TABS.CHANNEL) {
++              setSelectedTab(() => CONST_TYPES.ROOM_CHANNEL);
++            } else {
++              setSelectedTab(() => CONST_TYPES.ROOM_GROUP);
++            }
++          }}
++        />
++        {renderTabBar()}
+         <StatusComposition loading={loading} LoadingComponent={<GroupChannelListModule.StatusLoading />}>
+           <GroupChannelListModule.List
+             menuItemCreator={menuItemCreator}
+             renderGroupChannelPreview={_renderGroupChannelPreview}
+-            groupChannels={groupChannels}
++            // groupChannels={[...openChannels, ...groupChannels].filter(channel => {
++            groupChannels={groupChannels.filter(channel => {
++              // console.log('====>>>>' ,getChannelName(channel) );
++              if (channel?.members?.length < 2) {
++                if(channel.name==="this is new")
++                console.log('all channel NEW===>',channel?.members?.length,channel,);
++              
++              }
++              // if (channel?.members?.length < 2) {
++              //   if(channel.customType==="Event")
++              //   console.log('all channel NEW===>',channel?.members?.length,channel.name,channel);
++              
++              // }
++              let userPhone=channel?.memberCount===2? channel?.members?.find((i)=>i?.userId!==currentUser?.userId)?.metaData?.phone :'Channel'
++              let grpName=channel?.memberCount!==2? channel?.name :''
++              return  getrelamContactName(userPhone)?.toLowerCase()?.indexOf(searchQuery) > -1 || channel?.lastMessage?.message?.toLowerCase()?.indexOf(searchQuery) > -1 ||(channel?.memberCount===2&& userPhone?.toLowerCase()?.indexOf(searchQuery) > -1)||grpName?.toLowerCase()?.indexOf(searchQuery) > -1 ;
++            })?.filter(channel => {
++
++              const { customType } = getChannelWithCustomType(channel);
++              
++              if (channel?.customType?.toLowerCase() === 'event' && (selectedTab === CONST_TYPES.ROOM_CHANNEL || selectedTab === CONST_TYPES.ROOM_ALL ) ) {
++                return true;
++              }
++
++              if (channel?.members?.length < 2) {
++                return false
++              } else
++                if (channel?.lastMessage == null && channel?.members?.length == 2) {
++                  return false;
++                } else {
++
++                  if (selectedTab === CONST_TYPES.ROOM_ALL) {
++                    // Direct, Group, Channel
++                    return true;
++                  } else if (customType === CONST_TYPES.ROOM_GROUP) {
++                    // Group
++                    return selectedTab === CONST_TYPES.ROOM_GROUP;
++                  } else if (customType === CONST_TYPES.ROOM_CHANNEL) {
++                    // Channel
++                    return selectedTab === CONST_TYPES.ROOM_CHANNEL;
++                  } else {
++                    // No channels available...
++                    return false;
++                  }
++                }
++            })}
+             onLoadNext={next}
+             flatListProps={{
+               ListEmptyComponent: <GroupChannelListModule.StatusEmpty />,
+diff --git a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelMembersFragment.tsx b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelMembersFragment.tsx
+index a32aac9..b110e34 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelMembersFragment.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelMembersFragment.tsx
+@@ -1,30 +1,87 @@
+-import React, { useCallback } from 'react';
++// @ts-ignore
++import React, { useCallback, useEffect } from 'react';
++import { Text } from 'react-native';
+ 
+ import { useActiveGroupChannel, useChannelHandler } from '@sendbird/uikit-chat-hooks';
+-import { Icon } from '@sendbird/uikit-react-native-foundation';
++import { Icon, useToast } from '@sendbird/uikit-react-native-foundation';
+ import type { SendbirdMember } from '@sendbird/uikit-utils';
+-import { useForceUpdate, useUniqId } from '@sendbird/uikit-utils';
++import { useForceUpdate, useUniqId, PASS } from '@sendbird/uikit-utils';
+ 
+ import UserActionBar from '../components/UserActionBar';
+ import type { GroupChannelMembersFragment } from '../domain/groupChannelUserList/types';
+ import createUserListModule from '../domain/userList/module/createUserListModule';
+ import type { UserListModule } from '../domain/userList/types';
+ import { useLocalization, useSendbirdChat } from '../hooks/useContext';
+-
++import { useNavigation } from '@react-navigation/native';
++import { ConfirmationDialog, getrelamContactName } from '../../../../../src/commonAction';
++import { useBottomSheet } from '@sendbird/uikit-react-native-foundation';
++import { colors } from '../../../../../src/res/colors';
++import { POST } from '../../../../../src/api_helper/ApiServices';
++import { CHECK_SENDBIRD_USER } from '../../../../../src/api_helper/Api';
++import AsyncStorage from '@react-native-community/async-storage';
++import DeviceInfo from 'react-native-device-info';
++import { useDirectNavigation } from '../../../../../src/navigations/useDirectNavigation';
++import { Routes } from '../../../../../src/libs/navigation';
++import { widthPercentageToDP as wp } from 'react-native-responsive-screen';
++//import { CONST_TYPES, getChannelWithCustomType } from "../../../../../app/uikit-app";
++import { CONST_TYPES, getChannelWithCustomType } from '../../../../../src/uikit-app';
++import Strings from '../../../../../src/string_key/Strings';
+ const noop = () => '';
+ const name = 'createGroupChannelMembersFragment';
+ const createGroupChannelMembersFragment = (
+   initModule?: Partial<UserListModule<SendbirdMember>>,
+ ): GroupChannelMembersFragment<SendbirdMember> => {
+   const UserListModule = createUserListModule<SendbirdMember>(initModule);
+-
+-  return ({ channel, onPressHeaderLeft, onPressHeaderRight, renderUser }) => {
++  return ({
++    channel,
++    onPressHeaderLeft,
++    onPressHeaderRight,
++    renderUser,
++    menuItemCreator = PASS,
++    children,
++    onPermoteToOperator,
++    topListItem,
++    headerTitle = null,
++    showSave = true,
++    isOwner,
++    permissions,
++    searchQuery='',
++  }) => {
+     const uniqId = useUniqId(name);
+     const forceUpdate = useForceUpdate();
++    // @ts-ignore
+     const { sdk, currentUser } = useSendbirdChat();
+     const { activeChannel } = useActiveGroupChannel(sdk, channel);
++    const { openSheet } = useBottomSheet();
+ 
++    // @ts-ignore
+     const { STRINGS } = useLocalization();
++    const { navigate } = useNavigation();
++    const { navigation } = useDirectNavigation();
++
++    const onCheckSendBirdUser = async (data) => {
++      let postData = { "mobileNumbers": [data?.metaData.phone] }
++      const userData = await AsyncStorage.getItem('userDetails');
++      const uniqueID = await DeviceInfo.getUniqueId();
++      POST(CHECK_SENDBIRD_USER, true, JSON.parse(userData).token, uniqueID, postData, async (item) => {
++        if (item?.length > 0) {
++          if (item[0]?.isSendBirdUser == true) {
++            const params = new sdk.GroupChannelParams();
++            params.isSuper = false;
++            params.isPublic = false;
++            params.isEphemeral = false;
++            if (currentUser) params.operatorUserIds = [currentUser.userId];
++            params.addUserIds([data.userId]);
++            params.name = '';
++            params.isDistinct = true;
++            const channel = await sdk.GroupChannel.createChannel(params);
++            setTimeout(() => {
++              navigation.push(Routes.GroupChannel, { serializedChannel: channel.serialize() });
++            }, 500);
++          }
++        }
++      })
++    }
+ 
+     useChannelHandler(sdk, `${name}_${uniqId}`, {
+       onUserEntered(channel) {
+@@ -62,6 +119,232 @@ const createGroupChannelMembersFragment = (
+       },
+     });
+ 
++    const onBottomSheetActions = (user: any) => {
++      const is_owner = user.userId === activeChannel.creator.userId;
++      let menuToShow = [];
++
++      menuToShow.push({
++        // View User
++        title: <Text style={{ color: colors.BLUE_ACTION, textAlign: 'center', width: wp(100) }}>{`${Strings.view} ${getrelamContactName(user.metaData.phone) || `(${Strings.no_name})`}`}</Text>,
++        onPress: async () => {
++          navigate('ProfileView', { data: user, channelUrl: activeChannel?.url, is_super: activeChannel?.isSuper })
++        }
++      });
++      menuToShow.push({
++        // Message User
++        title: <Text style={{ color: colors.BLUE_ACTION, textAlign: 'center', width: wp(100) }}>{`${Strings.message} ${getrelamContactName(user.metaData.phone) || `(${Strings.no_name})`}`}</Text>,
++        onPress: async () => {
++          onCheckSendBirdUser(user)
++        }
++      });
++
++      if (activeChannel.myRole === 'operator') {
++        if (isOwner || permissions.ActionBanMembers) {
++          // Ban User
++          menuToShow.push({
++            title: <Text style={{ color: colors.BLUE_ACTION, textAlign: 'center', width: wp(100) }}>{`${Strings.ban} ${getrelamContactName(user.metaData.phone) || `(${Strings.no_name})`}`}</Text>,
++            onPress: async () => {
++              ConfirmationDialog(
++                {
++                  title: `${Strings.ban} ${getrelamContactName(user.metaData.phone)}`,
++                  subtitle: `${Strings.are_you_sure_to_ban}`,
++                  yesText: `${Strings.ban} ${getrelamContactName(user.metaData.phone)}`
++                },
++                () => {
++                  channel.banUserWithUserId(user.userId, 7776000, Strings.banned, (data) => {
++                    forceUpdate()
++                    navigation.goBack()
++                  })
++                }
++              )
++
++            }
++          });
++        }
++        if (isOwner || permissions.ActionMuteMembers) {
++          // Mute / UnMute User
++          menuToShow.push({
++            title: <Text style={{ color: colors.BLUE_ACTION, textAlign: 'center', width: wp(100) }}>{`${user.isMuted ? Strings.unmute : Strings.mute} ${getrelamContactName(user.metaData.phone) || `(${Strings.no_name})`}`}</Text>,
++            onPress: async () => {
++              user.isMuted ?
++                (
++                  ConfirmationDialog(
++                    {
++                      title: `${Strings.unmute} ${getrelamContactName(user.metaData.phone)}`,
++                      subtitle: `${Strings.are_you_sure_want_unmute}`,
++                      yesText: `${Strings.unmute} ${getrelamContactName(user.metaData.phone)}`
++                    },
++                    () => {
++                      channel.unmuteUserWithUserId(user.userId, (data) => {
++                        forceUpdate()
++                      })
++                    }
++                  )
++                )
++                :
++                (
++                  ConfirmationDialog(
++                    {
++                      title: `${Strings.mute} ${getrelamContactName(user.metaData.phone)}`,
++                      subtitle: `${Strings.are_you_sure_want_unmute}`,
++                      yesText: `${Strings.mute} ${getrelamContactName(user.metaData.phone)}`
++                    },
++                    () => {
++                      channel.muteUserWithUserId(user.userId, (data) => {
++                        forceUpdate()
++                      })
++                    }
++                  )
++                )
++
++            }
++          });
++        }
++
++        if (isOwner || permissions.ActionAddOperators) {
++          // Make or Remove Admin
++          menuToShow.push({
++            title: <Text style={{ textAlign: 'center', width: wp(100), color: user.role == "operator" ? colors.DARK_RED : colors.BLUE_ACTION }}>{user.role == "operator" ? Strings.dismiss_from_operator : Strings.promote_operator}</Text>,
++            onPress: () => onPermoteToOperator(user),
++            //   onPress: async () => {
++            //     user.role == "operator" ?
++            //       ConfirmationDialog(
++            //         {
++            //           title: `Demote Operator`,
++            //           subtitle: `Are you sure you want dismiss this member from operator?`,
++            //           yesText: `Demote Operator`
++            //         },
++            //         () => {
++            //           channel.removeOperators([user.userId + '']).then(() => {
++            //             forceUpdate()
++            //           })
++            //         }
++            //       )
++            //       :
++            //       ConfirmationDialog(
++            //         {
++            //           title: `Promote Operator`,
++            //           subtitle: `Are you sure you want promote this member as operator?`,
++            //           yesText: `Promote Operator`
++            //         },
++            //         () => {
++            //           channel.addOperators([user.userId + '']).then(() => {
++            //             forceUpdate()
++            //           })
++            //         }
++            //       )
++            //   },
++          });
++        }
++      }
++
++      if (user.role !== 'operator' || !is_owner) {
++        //Report Member
++        menuToShow.push({
++          title: <Text style={{ textAlign: 'center', width: wp(100), color: colors.BLUE_ACTION }}>{`${Strings.report_member} ${getrelamContactName(user.metaData.phone) || `(${Strings.no_name})`}`}</Text>,
++          onPress: async () => {
++            ConfirmationDialog(
++              {
++                title: `${Strings.report_member}`,
++                subtitle: `${Strings.are_you_sure_want_report}`,
++                yesText: `${Strings.report_member}`
++              },
++              () => {
++                navigation.navigate('ReportUser', { 'channelUrl': channel.url, "isSuper": channel.isSuper, "offending_user_id": user?.userId })
++              }
++            )
++          },
++        });
++      }
++
++      if (isOwner || (activeChannel.myRole === 'operator' && permissions.ActionDeleteMembers)) {
++        // Remove From Channel
++        menuToShow.push({
++          title: <Text style={{ textAlign: 'center', width: wp(100), color: colors.DARK_RED }}>{`${Strings.remove_from} ${channel.isSuper ? Strings.channel : Strings.group}`}</Text>,
++          onPress: async () => {
++            channel.banUserWithUserId(user.userId, 1, "banned", (data) => {
++              forceUpdate()
++              navigation.goBack()
++            })
++          },
++        });
++      }
++
++
++      menuToShow.push({
++        // Cancel
++        title: <Text style={{ color: colors.DARK_RED, textAlign: 'center', width: wp(100) }}>{Strings.Cancel}</Text>,
++        onPress: async () => {
++        }
++      });
++
++      openSheet({sheetItems: menuToShow});
++    };
++
++    const onGroupBottomSheetActions = (user: any) => {
++      let menuToShow = [
++        {
++          // View User
++          title: <Text style={{ color: colors.BLUE_ACTION, textAlign: 'center', width: wp(100) }}>{`View ${getrelamContactName(user.metaData.phone) || `(${Strings.no_name})`}`}</Text>,
++          onPress: async () => {
++            // @ts-ignore
++            navigate('ProfileView', { data: user, channelUrl: activeChannel?.url, is_super: activeChannel?.isSuper })
++          }
++        },
++        {
++          // Message User
++          title: <Text style={{ color: colors.BLUE_ACTION, textAlign: 'center', width: wp(100) }}>{`Message ${getrelamContactName(user.metaData.phone) || `(${Strings.no_name})`}`}</Text>,
++          onPress: async () => {
++            onCheckSendBirdUser(user)
++          }
++        },
++      ];
++
++      if (activeChannel.myRole === 'operator') {
++
++        if (isOwner || permissions.ActionAddOperators) {
++          // Make or Remove Admin
++          menuToShow.push({
++            title: <Text style={{ textAlign: 'center', width: wp(100), color: user.role == "operator" ? colors.DARK_RED : colors.BLUE_ACTION }}>{user.role == "operator" ? Strings.remove_from_admin :Strings.make_admin}</Text>,
++            onPress: () => onPermoteToOperator(user),
++            // onPress: async () => {
++            //   user.role == "operator" ?
++            //     channel.removeOperators([user.userId + '']).then(() => {
++            //       forceUpdate()
++            //     })
++            //     :
++            //     channel.addOperators([user.userId + '']).then(() => {
++            //       forceUpdate()
++            //     })
++            // },
++          });
++        }
++
++        if (isOwner || permissions.ActionDeleteMembers) {
++          // Remove From Channel
++          menuToShow.push({
++            title: <Text style={{ textAlign: 'center', width: wp(100), color: colors.DARK_RED }}>{`${Strings.remove_from} ${channel.isSuper ? Strings.channel : Strings.group}`}</Text>,
++            onPress: async () => {
++              channel.banUserWithUserId(user.userId, 1, Strings.banned, (data) => {
++                forceUpdate()
++                navigation.goBack()
++              })
++            },
++          });
++        }
++      }
++
++      menuToShow.push({
++        // Cancel
++        title: <Text style={{ color: colors.DARK_RED, textAlign: 'center', width: wp(100) }}>${Strings.Cancel}</Text>,
++        onPress: async () => {
++        }
++      });
++
++      // @ts-ignore
++      openSheet({sheetItems: menuToShow});
++    };
++
+     const _renderUser: NonNullable<typeof renderUser> = useCallback(
+       (user, selectedUsers, setSelectedUsers) => {
+         if (renderUser) return renderUser(user, selectedUsers, setSelectedUsers);
+@@ -70,14 +353,21 @@ const createGroupChannelMembersFragment = (
+           <UserActionBar
+             muted={user.isMuted}
+             uri={user.profileUrl}
+-            label={user.role === 'operator' ? STRINGS.GROUP_CHANNEL_MEMBERS.USER_BAR_OPERATOR : ''}
++            label={user.role === 'operator' ?
++              getChannelWithCustomType(channel).customType ===
++              CONST_TYPES.ROOM_GROUP ?
++                Strings.admin : Strings.operator : ''
++            }
+             name={
+-              (user.nickname || STRINGS.LABELS.USER_NO_NAME) +
+-              (user.userId === currentUser?.userId ? STRINGS.GROUP_CHANNEL_MEMBERS.USER_BAR_ME_POSTFIX : '')
++              //user.nickname
++              (getrelamContactName(user.metaData.phone) || `(${Strings.no_name})`) +
++              (user.userId === currentUser?.userId ?`(${Strings.you})` : '')
+             }
+             disabled={user.userId === currentUser?.userId}
+             // TODO: implement ban/mute actions, use channel.members with handlers instead member query
+-            onPressActionMenu={undefined}
++            onPressActionMenu={() => {
++              channel.isSuper ? onBottomSheetActions(user) : onGroupBottomSheetActions(user);
++            }}
+           />
+         );
+       },
+@@ -85,20 +375,33 @@ const createGroupChannelMembersFragment = (
+     );
+ 
+     return (
+-      <UserListModule.Provider headerRight={noop} headerTitle={STRINGS.GROUP_CHANNEL_MEMBERS.HEADER_TITLE}>
++      <UserListModule.Provider headerRight={noop} headerTitle={Strings.members}>
+         <UserListModule.Header
+           shouldActivateHeaderRight={() => true}
+           onPressHeaderLeft={onPressHeaderLeft}
+           right={<Icon icon={'plus'} />}
++          title={headerTitle}
++          showSave={showSave}
+           onPressHeaderRight={async () => onPressHeaderRight()}
+         />
+ 
+-        <UserListModule.List
+-          users={activeChannel.members}
+-          renderUser={_renderUser}
+-          onLoadNext={async () => void 0}
+-          ListEmptyComponent={<UserListModule.StatusEmpty />}
+-        />
++{topListItem}
++
++{children ? children : (
++  <UserListModule.List
++    users={!showSave ? activeChannel.members.filter(
++      member => member.role === 'operator'
++      ) : activeChannel.members.filter( user => {
++        let userPhone=user.metaData?.phone
++        return  getrelamContactName(userPhone)?.toLowerCase()?.indexOf(searchQuery) > -1 
++      })
++    }
++    showSave={showSave}
++    renderUser={_renderUser}
++    onLoadNext={async () => void 0}
++    ListEmptyComponent={<UserListModule.StatusEmpty />}
++          />
++        )}
+       </UserListModule.Provider>
+     );
+   };
+diff --git a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelSettingsFragment.tsx b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelSettingsFragment.tsx
+index 9d31606..0b05832 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelSettingsFragment.tsx
++++ b/node_modules/@sendbird/uikit-react-native/src/fragments/createGroupChannelSettingsFragment.tsx
+@@ -12,14 +12,14 @@ const createGroupChannelSettingsFragment = (
+   initModule?: Partial<GroupChannelSettingsModule>,
+ ): GroupChannelSettingsFragment => {
+   const GroupChannelSettingsModule = createGroupChannelSettingsModule(initModule);
+-
+-  return ({ onPressHeaderLeft = NOOP, channel, onPressMenuMembers, onPressMenuLeaveChannel, menuItemsCreator }) => {
++// @ts-ignore
++  return ({ onPressHeaderLeft = NOOP, channel, onPressMenuMembers, onPressMenuLeaveChannel, menuItemsCreator, onReportChannel, permissions, isOwner }) => {
+     const { colors } = useUIKitTheme();
+     const { left, right } = useSafeAreaInsets();
+ 
+     return (
+       <GroupChannelSettingsModule.Provider channel={channel}>
+-        <GroupChannelSettingsModule.Header onPressHeaderLeft={onPressHeaderLeft} />
++        <GroupChannelSettingsModule.Header isOwner={isOwner} permissions={permissions} onPressHeaderLeft={onPressHeaderLeft} />
+         <ScrollView
+           style={{ backgroundColor: colors.background }}
+           contentContainerStyle={{
+@@ -29,6 +29,10 @@ const createGroupChannelSettingsFragment = (
+         >
+           <GroupChannelSettingsModule.Info />
+           <GroupChannelSettingsModule.Menu
++            // @ts-ignore
++            isOwner={isOwner}
++            permissions={permissions}
++            onReportChannel={onReportChannel}
+             menuItemsCreator={menuItemsCreator}
+             onPressMenuMembers={onPressMenuMembers}
+             onPressMenuLeaveChannel={onPressMenuLeaveChannel}
+diff --git a/node_modules/@sendbird/uikit-react-native/src/hooks/usePushTokenRegistration.ts b/node_modules/@sendbird/uikit-react-native/src/hooks/usePushTokenRegistration.ts
+index 4d323bf..26a85dc 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/hooks/usePushTokenRegistration.ts
++++ b/node_modules/@sendbird/uikit-react-native/src/hooks/usePushTokenRegistration.ts
+@@ -4,11 +4,20 @@ import { Platform } from 'react-native';
+ import { Logger, useFreshCallback, useIIFE } from '@sendbird/uikit-utils';
+ 
+ import { usePlatformService, useSendbirdChat } from './useContext';
+-
++import { SendbirdCalls } from '@sendbird/calls-react-native';
++import TokenManager from '../../../../../src/libs/TokenManager';
++import AsyncStorage from '@react-native-community/async-storage';
++import { useAuthContext } from '../../../../../src/context/AuthContext';
+ const usePushTokenRegistration = () => {
+   const { sdk } = useSendbirdChat();
+   const { notificationService } = usePlatformService();
+ 
++  const { currentUser } = useAuthContext();
++  const { profileUrl, nickname, userId } = currentUser ?? {};
++
++
++  console.log("User registration",userId)
++
+   const refreshListener = useRef<() => void>();
+   const [registerToken, unregisterToken, getToken] = useIIFE(() => {
+     return [
+@@ -27,6 +36,7 @@ const usePushTokenRegistration = () => {
+     ];
+   });
+ 
++  
+   const registerPushTokenForCurrentUser = useFreshCallback(async () => {
+     // Check and request push permission
+     const hasPermission = await notificationService.hasPushPermission();
+@@ -41,8 +51,14 @@ const usePushTokenRegistration = () => {
+     // Register device token
+     const token = await getToken();
+     if (token) {
+-      Logger.log('[usePushTokenRegistration]', 'registered token:', token);
++      Logger.log('[usePushTokenRegistration current]', 'registered token:', token);
+       registerToken(token);
++      if (Platform.OS === 'android') {
++        await Promise.all([
++          SendbirdCalls.registerPushToken(token, true),
++          TokenManager.set({ value: token, type: 'fcm' }),
++        ]);
++      }
+     }
+ 
+     // Remove listener
+diff --git a/node_modules/@sendbird/uikit-react-native/src/localization/StringSet.type.ts b/node_modules/@sendbird/uikit-react-native/src/localization/StringSet.type.ts
+index 986a051..1a446fb 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/localization/StringSet.type.ts
++++ b/node_modules/@sendbird/uikit-react-native/src/localization/StringSet.type.ts
+@@ -69,15 +69,24 @@ export interface StringSet {
+     MENU_NOTIFICATION: string;
+     MENU_MEMBERS: string;
+     MENU_LEAVE_CHANNEL: string;
++    MENU_LEAVE_GROUP: string;
++    ADD_MEMBERS: string;
++    ADMINS: string;
++    OPERATOR: string;
++    REPORT_GROUP: string;
++    REPORT_CHANNEL: string;
+ 
+     /** GroupChannelSettings > Dialog */
+     DIALOG_CHANGE_NAME: string;
++    DIALOG_CHANGE_NAME_GROUP: string;
+     DIALOG_CHANGE_IMAGE: string;
++    DIALOG_CHANGE_IMAGE_GROUP: string;
+     DIALOG_CHANGE_NAME_PROMPT_TITLE: string;
+     DIALOG_CHANGE_NAME_PROMPT_PLACEHOLDER: string;
+     DIALOG_CHANGE_NAME_PROMPT_CANCEL: string;
+     DIALOG_CHANGE_NAME_PROMPT_OK: string;
+     DIALOG_CHANGE_IMAGE_MENU_TITLE: string;
++    DIALOG_CHANGE_IMAGE_MENU_TITLE_GROUP: string;
+     DIALOG_CHANGE_IMAGE_MENU_CAMERA: string;
+     DIALOG_CHANGE_IMAGE_MENU_PHOTO_LIBRARY: string;
+   };
+@@ -101,6 +110,7 @@ export interface StringSet {
+     DIALOG_CHANNEL_TITLE: (currentUserId: string, channel: SendbirdGroupChannel) => string;
+     DIALOG_CHANNEL_NOTIFICATION: (channel?: SendbirdGroupChannel) => string;
+     DIALOG_CHANNEL_LEAVE: string;
++    DIALOG_CHANNEL_DELETE: string
+   };
+   GROUP_CHANNEL_MEMBERS: {
+     /** GroupChannelMembers > Header */
+@@ -205,8 +215,8 @@ export const createBaseStringSet = ({ dateLocale, overrides }: StringSetCreateOp
+       MESSAGE_BUBBLE_UNKNOWN_TITLE: () => '(Unknown message type)',
+       MESSAGE_BUBBLE_UNKNOWN_DESC: () => 'Cannot read this message.',
+ 
+-      INPUT_PLACEHOLDER_ACTIVE: 'Enter message',
+-      INPUT_PLACEHOLDER_DISABLED: 'Chat is unavailable in this channel',
++      INPUT_PLACEHOLDER_ACTIVE: 'Write a message',
++      INPUT_PLACEHOLDER_DISABLED: 'Chat is unavailable',
+       INPUT_EDIT_OK: 'Save',
+       INPUT_EDIT_CANCEL: 'Cancel',
+ 
+@@ -230,20 +240,28 @@ export const createBaseStringSet = ({ dateLocale, overrides }: StringSetCreateOp
+       HEADER_RIGHT: 'Edit',
+       MENU_NOTIFICATION: 'Notifications',
+       MENU_MEMBERS: 'Members',
++      REPORT_CHANNEL: 'Report Channel',
++      ADD_MEMBERS: 'Add Members',
++      REPORT_GROUP: 'Report Group',
++      ADMINS: 'Admins',
++      OPERATOR: 'Operator',
+       MENU_LEAVE_CHANNEL: 'Leave channel',
++      MENU_LEAVE_GROUP: 'Leave Group',
+       DIALOG_CHANGE_NAME: 'Change channel name',
++      DIALOG_CHANGE_NAME_GROUP: 'Change group name',
+       DIALOG_CHANGE_NAME_PROMPT_TITLE: 'Change channel name',
+       DIALOG_CHANGE_NAME_PROMPT_PLACEHOLDER: 'Enter name',
+       DIALOG_CHANGE_NAME_PROMPT_OK: 'Save',
+       DIALOG_CHANGE_NAME_PROMPT_CANCEL: 'Cancel',
+       DIALOG_CHANGE_IMAGE: 'Change channel image',
++      DIALOG_CHANGE_IMAGE_GROUP: 'Change group image',
+       DIALOG_CHANGE_IMAGE_MENU_TITLE: 'Change channel image',
+       DIALOG_CHANGE_IMAGE_MENU_CAMERA: 'Take photo',
+       DIALOG_CHANGE_IMAGE_MENU_PHOTO_LIBRARY: 'Choose photo',
+       ...overrides?.GROUP_CHANNEL_SETTINGS,
+     },
+     GROUP_CHANNEL_LIST: {
+-      HEADER_TITLE: 'Channels',
++      HEADER_TITLE: "Buzzmi",
+       CHANNEL_PREVIEW_TITLE: (currentUserId, channel) =>
+         getGroupChannelTitle(currentUserId, channel, USER_NO_NAME, CHANNEL_NO_MEMBERS),
+       CHANNEL_PREVIEW_TITLE_CAPTION: (channel, locale) => getGroupChannelPreviewTime(channel, locale ?? dateLocale),
+@@ -260,6 +278,7 @@ export const createBaseStringSet = ({ dateLocale, overrides }: StringSetCreateOp
+         return 'Turn off notifications';
+       },
+       DIALOG_CHANNEL_LEAVE: 'Leave channel',
++      DIALOG_CHANNEL_DELETE: 'Delete',
+       ...overrides?.GROUP_CHANNEL_LIST,
+     },
+     GROUP_CHANNEL_MEMBERS: {
+diff --git a/node_modules/@sendbird/uikit-react-native/src/platform/createFileService.native.ts b/node_modules/@sendbird/uikit-react-native/src/platform/createFileService.native.ts
+index 023d29c..3d742b5 100644
+--- a/node_modules/@sendbird/uikit-react-native/src/platform/createFileService.native.ts
++++ b/node_modules/@sendbird/uikit-react-native/src/platform/createFileService.native.ts
+@@ -56,12 +56,12 @@ const createNativeFileService = ({
+   fsModule: typeof FileAccess;
+ }): FileServiceInterface => {
+   const cameraPermissions: Permission[] = Platform.select({
+-    ios: [permissionModule.PERMISSIONS.IOS.CAMERA, permissionModule.PERMISSIONS.IOS.MICROPHONE],
++    ios: [],
+     android: [permissionModule.PERMISSIONS.ANDROID.CAMERA],
+     default: [],
+   });
+   const mediaLibraryPermissions: Permission[] = Platform.select({
+-    ios: [permissionModule.PERMISSIONS.IOS.MEDIA_LIBRARY, permissionModule.PERMISSIONS.IOS.PHOTO_LIBRARY],
++    ios: [],
+     android: getAndroidStoragePermissionsByAPILevel(permissionModule),
+     default: [],
+   });

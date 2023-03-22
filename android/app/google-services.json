@@ -1,0 +1,63 @@
+{
+  "project_info": {
+    "project_number": "239868943110",
+    "project_id": "buzzmi-8eeb0",
+    "storage_bucket": "buzzmi-8eeb0.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:239868943110:android:35b89dd5fd60f9111b9c87",
+        "android_client_info": {
+          "package_name": "com.app.buzzmi"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "239868943110-228pcpjip7qq23i1tcfqu5gvnm6903ae.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.app.buzzmi",
+            "certificate_hash": "f0c54c07938ae680e80b89e400c9d15c4a4744e2"
+          }
+        },
+        {
+          "client_id": "239868943110-fr6pv2usrttm9pd7ebmg4mdbphg95fbc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.app.buzzmi",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "239868943110-f8mjsm25fvajefv90t61enqtv845k2uk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8a6zBgg5JS6ABn407SLD7VjtnbigyRNw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "239868943110-f8mjsm25fvajefv90t61enqtv845k2uk.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "239868943110-3fkt78bhplli4jbfgbop80dhf48g48mk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.app.buzzmi",
+                "app_store_id": "1662333460"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

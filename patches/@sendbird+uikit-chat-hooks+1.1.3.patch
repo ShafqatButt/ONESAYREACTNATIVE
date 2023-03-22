@@ -1,0 +1,14 @@
+diff --git a/node_modules/@sendbird/uikit-chat-hooks/src/channel/useGroupChannelList/reducer.ts b/node_modules/@sendbird/uikit-chat-hooks/src/channel/useGroupChannelList/reducer.ts
+index 012f61b..39893d8 100644
+--- a/node_modules/@sendbird/uikit-chat-hooks/src/channel/useGroupChannelList/reducer.ts
++++ b/node_modules/@sendbird/uikit-chat-hooks/src/channel/useGroupChannelList/reducer.ts
+@@ -113,9 +113,7 @@ export const useGroupChannelListReducer = (order?: Order) => {
+     updateChannels,
+     deleteChannels,
+     setChannels,
+-
+     updateOrder,
+-
+     loading,
+     refreshing,
+     groupChannels,

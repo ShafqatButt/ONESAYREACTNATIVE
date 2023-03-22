@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name" translatable="false">Buzzmi</string>
+    <string name="facebook_app_id" translatable="false">487893239992061</string>
+    <string name="facebook_client_token" translatable="false">2a672d4b00d5cd42b2e3d00dab46d1ab</string>
+    <string name="google_places_api_key" translatable="false">AIzaSyBTfypSbx_zNMhWSBXMTA2BJBMQO7_9_T8</string>
+</resources>

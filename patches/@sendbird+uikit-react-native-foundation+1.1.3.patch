@@ -1,0 +1,344 @@
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/lib/typescript/src/assets/icon/index.d.ts b/node_modules/@sendbird/uikit-react-native-foundation/lib/typescript/src/assets/icon/index.d.ts
+index 6de9796..2e334a8 100644
+--- a/node_modules/@sendbird/uikit-react-native-foundation/lib/typescript/src/assets/icon/index.d.ts
++++ b/node_modules/@sendbird/uikit-react-native-foundation/lib/typescript/src/assets/icon/index.d.ts
+@@ -57,6 +57,7 @@ declare const IconAssets: {
+     theme: any;
+     'thumbnail-none': any;
+     unarchive: any;
++    'volume': any;
+     user: any;
+ };
+ export default IconAssets;
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/lib/typescript/src/styles/HeaderStyleContext.d.ts b/node_modules/@sendbird/uikit-react-native-foundation/lib/typescript/src/styles/HeaderStyleContext.d.ts
+index d40ae4a..f730800 100644
+--- a/node_modules/@sendbird/uikit-react-native-foundation/lib/typescript/src/styles/HeaderStyleContext.d.ts
++++ b/node_modules/@sendbird/uikit-react-native-foundation/lib/typescript/src/styles/HeaderStyleContext.d.ts
+@@ -7,6 +7,8 @@ export declare type HeaderStyleContextType = {
+         right?: HeaderElement;
+         onPressLeft?: () => void;
+         onPressRight?: () => void;
++        onPressSecondRight?: () => void;
++
+     }, {
+         clearTitleMargin?: boolean;
+     }>) => React.ReactElement | null;
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/src/assets/.DS_Store b/node_modules/@sendbird/uikit-react-native-foundation/src/assets/.DS_Store
+new file mode 100644
+index 0000000..e69de29
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/src/assets/icon/.DS_Store b/node_modules/@sendbird/uikit-react-native-foundation/src/assets/icon/.DS_Store
+new file mode 100644
+index 0000000..e69de29
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/src/assets/icon/index.ts b/node_modules/@sendbird/uikit-react-native-foundation/src/assets/icon/index.ts
+index 225940e..a91806b 100644
+--- a/node_modules/@sendbird/uikit-react-native-foundation/src/assets/icon/index.ts
++++ b/node_modules/@sendbird/uikit-react-native-foundation/src/assets/icon/index.ts
+@@ -1,12 +1,14 @@
+ const IconAssets = {
+   'chat-hide': require('./ic-chat-hide.png'),
+   'chat-show': require('./ic-chat-show.png'),
+-  'add': require('./icon-add.png'),
++  'add': require('../../../../../../src/assets/ic_plus.png'),
+   'archive': require('./icon-archive.png'),
+   'arrow-left': require('./icon-arrow-left.png'),
+   'ban': require('./icon-ban.png'),
+   'broadcast': require('./icon-broadcast.png'),
+   'camera': require('./icon-camera.png'),
++  'ic_camera': require('../../../../../../src/assets/ic_camera.png'),
++  'smile_emoji': require('../../../../../../src/assets/ic_smile_emoji.png'),
+   'channels': require('./icon-channels.png'),
+   'chat-filled': require('./icon-chat-filled.png'),
+   'chat': require('./icon-chat.png'),
+@@ -55,6 +57,10 @@ const IconAssets = {
+   'streaming': require('./icon-streaming.png'),
+   'supergroup': require('./icon-supergroup.png'),
+   'theme': require('./icon-theme.png'),
++  'microphone': require('../../../../../../src/assets/ic_microphone.png'),
++  'add_ope': require('../../../../../../src/assets/ic_add_operator.png'),
++  'pause': require('../../../../../../src/assets/ic_pause.png'),
++  'subtract': require('../../../../../../src/assets/subtract_ic.png'),
+   'thumbnail-none': require('./icon-thumbnail-none.png'),
+   'unarchive': require('./icon-unarchive.png'),
+   'user': require('./icon-user.png'),
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Avatar/index.tsx b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Avatar/index.tsx
+index 2e7ef58..0d6f0a2 100644
+--- a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Avatar/index.tsx
++++ b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Avatar/index.tsx
+@@ -48,7 +48,7 @@ const Avatar: ((props: Props) => JSX.Element) & SubComponents = ({
+             resizeMode={'cover'}
+             style={StyleSheet.absoluteFill}
+           />,
+-          <Icon icon={'user'} size={size / 2} color={colors.onBackgroundReverse01} />,
++          <Icon icon={'user'} size={size} color={colors.onBackgroundReverse01} />,
+         ],
+       )}
+       {muted && <MutedOverlay size={size} />}
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/BottomSheet/index.tsx b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/BottomSheet/index.tsx
+index f4eadd9..15c6679 100644
+--- a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/BottomSheet/index.tsx
++++ b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/BottomSheet/index.tsx
+@@ -1,5 +1,5 @@
+ import React from 'react';
+-import { TouchableOpacity, useWindowDimensions } from 'react-native';
++import { TouchableOpacity, Text, useWindowDimensions } from 'react-native';
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
+ 
+ import useHeaderStyle from '../../styles/useHeaderStyle';
+@@ -37,19 +37,37 @@ const BottomSheet = ({ onDismiss, onHide, visible, sheetItems }: Props) => {
+     >
+       <DialogSheet style={{ width, paddingBottom: bottom }}>
+         {sheetItems.map(({ onPress, ...props }, idx) => (
+-          <TouchableOpacity
+-            activeOpacity={0.75}
+-            key={props.title + idx}
+-            style={{ paddingLeft: left, paddingRight: right }}
+-            onPress={async () => {
+-              await onHide();
+-              try {
+-                onPress();
+-              } catch {}
+-            }}
+-          >
+-            <DialogSheet.Item {...props} />
+-          </TouchableOpacity>
++          <>
++            {props?.type === 'reactions' ? (
++                <TouchableOpacity
++                  activeOpacity={0.75}
++                  key={props.title + idx}
++                  style={{ paddingLeft: left, paddingRight: right, borderBottomWidth: 0.5, borderBottomColor: 'rgba(0,0,0,0.15)' }}
++                  onPress={async () => {
++                    await onHide();
++                    try {
++                      onPress();
++                    } catch {}
++                  }}
++                >
++                  <DialogSheet.Item {...props} title={'Reactions'} />
++                </TouchableOpacity>
++              ) : (
++              <TouchableOpacity
++                activeOpacity={0.75}
++                key={props.title + idx}
++                style={{ paddingLeft: left, paddingRight: right, borderBottomWidth: 0.5, borderBottomColor: 'rgba(0,0,0,0.15)' }}
++                onPress={async () => {
++                  await onHide();
++                  try {
++                    onPress();
++                  } catch {}
++                }}
++              >
++                <DialogSheet.Item {...props} />
++              </TouchableOpacity>
++            )}
++          </>
+         ))}
+       </DialogSheet>
+     </Modal>
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Dialog/DialogSheet.tsx b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Dialog/DialogSheet.tsx
+index da2066b..be7e07d 100644
+--- a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Dialog/DialogSheet.tsx
++++ b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Dialog/DialogSheet.tsx
+@@ -28,13 +28,6 @@ const SheetItem = ({ icon, title, iconColor, titleColor }: SheetItemProps) => {
+   const { colors } = useUIKitTheme();
+   return (
+     <View style={[styles.sheetItemContainer, { backgroundColor: colors.ui.dialog.default.none.background }]}>
+-      {icon && (
+-        <Icon
+-          icon={icon}
+-          color={iconColor ?? colors.ui.dialog.default.none.highlight}
+-          containerStyle={styles.sheetItemIcon}
+-        />
+-      )}
+       <Text
+         subtitle1
+         numberOfLines={1}
+@@ -43,6 +36,13 @@ const SheetItem = ({ icon, title, iconColor, titleColor }: SheetItemProps) => {
+       >
+         {title}
+       </Text>
++      {icon && (
++        <Icon
++          icon={icon}
++          color={iconColor ?? colors.ui.dialog.default.none.highlight}
++          containerStyle={styles.sheetItemIcon}
++        />
++      )}
+     </View>
+   );
+ };
+@@ -58,10 +58,12 @@ const styles = createStyleSheet({
+   sheetItemContainer: {
+     flexDirection: 'row',
+     alignItems: 'center',
++    justifyContent: 'space-between',
+     height: 48,
+   },
+   sheetItemIcon: {
+-    marginLeft: 16,
++    // marginLeft: 16,
++    marginRight: 16,
+   },
+   sheetItemText: {
+     marginHorizontal: 24,
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/GroupChannelPreview/index.tsx b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/GroupChannelPreview/index.tsx
+index 5f1fe36..2e53415 100644
+--- a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/GroupChannelPreview/index.tsx
++++ b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/GroupChannelPreview/index.tsx
+@@ -1,5 +1,5 @@
+ import React from 'react';
+-import { View } from 'react-native';
++import { View, Platform } from 'react-native';
+ 
+ import { conditionChaining } from '@sendbird/uikit-utils';
+ 
+@@ -9,6 +9,7 @@ import useUIKitTheme from '../../theme/useUIKitTheme';
+ import Badge from '../Badge';
+ import Icon from '../Icon';
+ import Text from '../Text';
++import { fonts } from '../../../../../../src/res/fonts';
+ 
+ type Props = {
+   customCover?: React.ReactElement;
+@@ -65,18 +66,21 @@ const GroupChannelPreview = ({
+       <View style={styles.rightSection}>
+         <View style={styles.rightTopSection}>
+           <View style={styles.channelInfoContainer}>
+-            <Text numberOfLines={1} subtitle1 style={styles.channelInfoTitle} color={color.default.none.textTitle}>
++            <Text numberOfLines={1} subtitle2 subtitle1={Boolean(memberCount)} style={[styles.channelInfoTitle, { fontFamily: Boolean(memberCount) ? fonts.BOLD : fonts.REGULAR }]} color={Boolean(memberCount) ? colors.ui.badge.default.none.background : color.default.none.textTitle}>
+               {title}
+             </Text>
+-            {Boolean(memberCount) && (
+-              <Text caption1 style={styles.channelInfoMemberCount} color={color.default.none.memberCount}>
+-                {memberCount}
+-              </Text>
+-            )}
+             {frozen && (
+               <Icon size={16} icon={'freeze'} color={colors.primary} containerStyle={styles.channelInfoFrozen} />
+             )}
+             {notificationOff && <Icon size={16} icon={'notifications-off-filled'} color={colors.onBackground03} />}
++            {Boolean(memberCount) && (
++              <View style={styles.badgeSmall}>
++                <Text caption1 color={colors.ui.badge.default.none.text}>
++                  {memberCount}
++                </Text>
++              </View>
++            )}
++
+           </View>
+           <View style={styles.titleCaptionContainer}>
+             {titleCaptionLeft}
+@@ -93,10 +97,11 @@ const GroupChannelPreview = ({
+                 <Icon
+                   size={18}
+                   icon={bodyIcon}
+-                  color={color.default.none.bodyIcon}
++                  // color={color.default.none.bodyIcon}
++                  color={'#6529e2'}
+                   containerStyle={[
+                     styles.bodyIcon,
+-                    { backgroundColor: colors.ui.groupChannelPreview.default.none.bodyIconBackground },
++                    // { backgroundColor: colors.ui.groupChannelPreview.default.none.bodyIconBackground },
+                   ]}
+                 />
+               )}
+@@ -189,7 +194,7 @@ const styles = createStyleSheet({
+     borderRadius: 8,
+     width: 26,
+     height: 26,
+-    marginRight: 4,
++    marginRight: 0,
+   },
+   unreadBadge: {
+     minWidth: 20,
+@@ -205,6 +210,16 @@ const styles = createStyleSheet({
+     bottom: 0,
+     height: 1,
+   },
++  badgeSmall: {
++    paddingTop: Platform.select({ ios: 3, android: 2 }),
++    minWidth: 18,
++    minHeight: 18,
++    marginLeft: 2,
++    borderRadius: 99,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: 'red'
++  },
+ });
+ 
+ export default GroupChannelPreview;
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/MenuBar/index.tsx b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/MenuBar/index.tsx
+index 8c0fba3..44ab343 100644
+--- a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/MenuBar/index.tsx
++++ b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/MenuBar/index.tsx
+@@ -14,7 +14,7 @@ export type MenuBarProps = {
+ 
+   onPress: () => void;
+   disabled?: boolean;
+-
++  primaryTitle?: boolean;
+   icon: keyof typeof Icon.Assets;
+   iconColor?: string;
+   iconBackgroundColor?: string;
+@@ -30,6 +30,7 @@ const MenuBar = ({
+   name,
+   icon,
+   iconColor,
++  primaryTitle,
+   iconBackgroundColor,
+   actionLabel,
+   actionItem = null,
+@@ -54,7 +55,16 @@ const MenuBar = ({
+             ]}
+           />
+         )}
+-        <Text subtitle2 numberOfLines={1} style={styles.name}>
++        <Text
++          subtitle2
++          numberOfLines={1}
++          style={[
++            styles.name,
++            primaryTitle && {
++              fontWeight: 'bold',
++              color: colors.primary
++            }]}
++        >
+           {name}
+         </Text>
+         {Boolean(actionLabel) && (
+@@ -71,7 +81,7 @@ const MenuBar = ({
+ 
+ const styles = createStyleSheet({
+   container: {
+-    paddingVertical: 16,
++    paddingVertical: 14,
+     flexDirection: 'row',
+     alignItems: 'center',
+   },
+diff --git a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Switch/index.tsx b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Switch/index.tsx
+index 8dcd0a2..b7a75af 100644
+--- a/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Switch/index.tsx
++++ b/node_modules/@sendbird/uikit-react-native-foundation/src/ui/Switch/index.tsx
+@@ -55,18 +55,18 @@ const Switch = ({
+   );
+ };
+ 
+-const OFFSET = { W: 20, H: 16 };
++const OFFSET = { W: 24, H: 20 };
+ const styles = createStyleSheet({
+   container: {
+     width: OFFSET.W + OFFSET.H,
+-    height: OFFSET.H,
++    height: OFFSET.W * 1.13,
+     alignItems: 'center',
+     justifyContent: 'center',
+   },
+   track: {
+     width: '100%',
+     height: '100%',
+-    borderRadius: OFFSET.H / 2,
++    borderRadius: OFFSET.H / 1,
+     position: 'absolute',
+   },
+   thumb: {

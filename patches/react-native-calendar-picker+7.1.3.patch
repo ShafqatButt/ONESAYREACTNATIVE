@@ -1,0 +1,58 @@
+diff --git a/node_modules/react-native-calendar-picker/CalendarPicker/index.js b/node_modules/react-native-calendar-picker/CalendarPicker/index.js
+index 3fb6625..aa6597e 100644
+--- a/node_modules/react-native-calendar-picker/CalendarPicker/index.js
++++ b/node_modules/react-native-calendar-picker/CalendarPicker/index.js
+@@ -234,12 +234,13 @@ export default class CalendarPicker extends Component {
+       onDateChange,
+     } = this.props;
+ 
+-    if (!enableDateChange) {
++    const date = moment({ year, month, day, hour: 12 });
++
++    if (enableDateChange) {
++      onDateChange(date, Utils.END_DATE);
+       return;
+     }
+ 
+-    const date = moment({ year, month, day, hour: 12 });
+-
+     if (allowRangeSelection && prevSelectedStartDate && !prevSelectedEndDate) {
+       if (date.isSameOrAfter(prevSelectedStartDate, 'day')) {
+         const selectedStartDate = prevSelectedStartDate;
+@@ -288,6 +289,15 @@ export default class CalendarPicker extends Component {
+     const { currentMonth, currentYear } = this.state;
+     let previousMonth = currentMonth - 1;
+     let year = currentYear;
++
++    const todayMonth = parseInt(moment().format('M'));
++    const todayYear = parseInt(moment().format('YYYY'));
++
++    if (currentMonth < todayMonth && currentYear === todayYear) {
++      console.log('Can not go back');
++      return;
++    }
++
+     // if previousMonth is negative it means the current month is January,
+     // so we have to go back to previous year and set the current month to December
+     if (previousMonth < 0) {
+@@ -299,11 +309,19 @@ export default class CalendarPicker extends Component {
+   }
+ 
+   handleOnPressNext = () => {
+-    const { currentMonth, currentYear } = this.state;
++    const { currentMonth, currentYear, maxDate, minDate } = this.state;
+     let nextMonth = currentMonth + 1;
+     let year = currentYear;
+     // if nextMonth is greater than 11 it means the current month is December,
+     // so we have to go forward to the next year and set the current month to January
++    const cMonth = currentMonth + 1;
++    const minMonth = parseInt(moment(minDate).format('M'));
++    const maxMonth = parseInt(moment(maxDate).format('M'));
++
++    if (cMonth >= maxMonth) {
++      return;
++    }
++
+     if (nextMonth > 11) {
+       nextMonth = 0;
+       year++;

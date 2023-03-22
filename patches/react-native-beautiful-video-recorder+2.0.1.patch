@@ -1,0 +1,31 @@
+diff --git a/node_modules/react-native-beautiful-video-recorder/lib/index.js b/node_modules/react-native-beautiful-video-recorder/lib/index.js
+index e8f3edf..27259cd 100644
+--- a/node_modules/react-native-beautiful-video-recorder/lib/index.js
++++ b/node_modules/react-native-beautiful-video-recorder/lib/index.js
+@@ -5,7 +5,7 @@ import {
+   TouchableWithoutFeedback,
+   TouchableOpacity,
+   Text,
+-  InteractionManager,
++  InteractionManager,Platform,StatusBar
+ } from 'react-native';
+ import PropTypes from 'prop-types'
+ import moment from 'moment';
+@@ -150,7 +150,7 @@ export default class VideoRecorder extends Component {
+       <View>
+         {
+           (recorded || isRecording) &&
+-          <Text style={this.props.durationTextStyle}>
++          <Text style={[{top:Platform.OS=='ios'? 30:0}, this.props.durationTextStyle]}>
+             <Text style={styles.dotText}>●</Text> {this.convertTimeString(time)}
+           </Text>
+         }
+@@ -204,7 +204,7 @@ export default class VideoRecorder extends Component {
+             <View style={styles.content}>
+               {this.renderCamera()}
+             </View>
+-            <TouchableOpacity onPress={this.close} style={this.props.buttonCloseStyle}>
++            <TouchableOpacity onPress={this.close} style={[{marginTop:Platform.OS=='ios'? 30:0}, this.props.buttonCloseStyle]}>
+               {this.props.renderClose()}
+             </TouchableOpacity>
+           </View>

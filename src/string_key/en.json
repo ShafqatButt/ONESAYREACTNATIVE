@@ -1,0 +1,186 @@
+[
+    {
+        "key": "welcome_chat_connect",
+        "value": "Welcome to \n Buzzmi. \n Connect. \n Call & Chat",
+    },
+    {
+        "key": "login",
+        "value": "Login"
+    },
+    {
+        "key": "sign_up",
+        "value": "Sign Up"
+    },
+    {
+        "key": "contact_us",
+        "value": "Contact Us"
+    },
+    {
+        "key": "email_name",
+        "value": "Email or Username"
+    },
+    {
+        "key": "enter_username",
+        "value": "Please enter username"
+    },
+    {
+        "key": "enter_valid_username",
+        "value": "There should be no spaces in the username, only numbers and letters, and it should be between 3 and 20 characters long."
+    },
+    {
+        "key": "password",
+        "value": "Password"
+    },
+    {
+        "key": "forgot_password",
+        "value": "Forgot Password?"
+    },
+    {
+        "key": "please_enter_email_or_user",
+        "value": "Please enter email or user name"
+    },
+    {
+        "key": "please_enter_email",
+        "value": "Please enter email"
+    },
+    {
+        "key": "please_enter_valid_phone",
+        "value": "Please enter a valid phone number"
+    },
+    {
+        "key": "please_select_gender",
+        "value": "Please specify your gender"
+    },
+    {
+        "key": "please_enter_first_name",
+        "value": "Please enter first name"
+    },
+    {
+        "key": "please_enter_valid_last_name",
+        "value": "Last name should not contain any numbers and should be between 3 and 20 characters long."
+    },
+    {
+        "key": "please_enter_valid_first_name",
+        "value": "First name should not contain any numbers and should be between 3 and 20 characters long."
+    },
+    {
+        "key": "please_enter_last_name",
+        "value": "Please enter last name"
+    },
+    {
+        "key": "please_enter_valid_email",
+        "value": "Please enter valid email"
+    },
+    {
+        "key": "please_enter_password",
+        "value": "Please enter password"
+    },
+    {
+        "key": "please_enter_confirm_password",
+        "value": "Please enter confirm password"
+    },
+    {
+        "key": "passwords_do_not_match",
+        "value": "Passwords do not match"
+    },
+    {
+        "key": "username",
+        "value": "Username"
+    },
+    {
+        "key": "password",
+        "value": "Password"
+    },
+    {
+        "key": "register_new_account",
+        "value": "Register a new account"
+    },
+    {
+        "key": "first_name",
+        "value": "First Name"
+    },
+    {
+        "key": "last_name",
+        "value": "Last Name"
+    },
+    {
+        "key": "date_of_birth",
+        "value": "Date of birth"
+    },
+    {
+        "key": "please_enter_dob",
+        "value": "Please enter your birth date"
+    },
+    {
+        "key": "please_enter_valid_dob",
+        "value": "Please enter valid birth date"
+    },
+    {
+        "key": "male",
+        "value": "Male"
+    },
+    {
+        "key": "female",
+        "value": "Female"
+    },
+    {
+        "key": "Custom",
+        "value": "custom"
+    },
+    {
+        "key": "email",
+        "value": "Email"
+    },
+    {
+        "key": "book_event",
+        "value": "Book Event"
+    },
+    {
+        "key": "follow",
+        "value": "Follow"
+    },
+    {
+        "key": "submit",
+        "value": "Submit"
+    },
+    {
+        "key": "please_select_the_reason",
+        "value": "Please select the reason"
+    },
+    {
+        "key": "user_reported",
+        "value": "User Reported"
+    },
+    {
+        "key": "report_noted",
+        "value": "Your report is noted. we will review this"
+    },
+    {
+        "key": "group_reported",
+        "value": "Group Reported"
+    },
+    {
+        "key": "channel_reported",
+        "value": "Channel Reported"
+    },
+    {
+        "key": "got_it",
+        "value": "Got it"
+    },
+    {
+        "key": "delete",
+        "value": "Delete"
+    },
+    {
+        "key": "report_group_message",
+        "value": "The last 5 messages from this group will be forwarded to Buzzmi. If you exit this group and delete the chat, message will only be removed from the device and your devices on the newer version of Buzzmi."
+    },
+    {
+        "key": "report_channel_message",
+        "value": "The last 5 messages from this channel will be forwarded to Buzzmi. If you exit this channel and delete the chat, message will only be removed from the device and your devices on the newer version of Buzzmi."
+    },
+    {
+        "key": "are_you_sure_you_want_to_delete",
+        "value": "Are you sure you want to delete"
+    }
+]
